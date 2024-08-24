@@ -40,14 +40,12 @@ class ImgCommentDataset(Dataset):
     def __init__(
         self,
         config: Config,
-        img_comments_folder: Path,
         train_test_split: str = TRAIN,
         train_test_split_portion: float = 0.8,
     ):
         self.config = config
-        self.img_commments_folder = img_comments_folder
-        self.img_comments_file = img_comments_folder / "results.csv"
-        self.imgs_folder = img_comments_folder / "flickr30k_images"
+        self.img_comments_file = config.img_comments_folder / "results.csv"
+        self.imgs_folder = config.img_comments_folder / "flickr30k_images"
 
         self.train_test_split = train_test_split
         self.train_test_split_portion = train_test_split_portion
@@ -73,7 +71,7 @@ class ImgCommentDataset(Dataset):
         image_name = str(list(row_df[IMAGE_NAME])[0])
         assert (
             self.imgs_folder / image_name
-        ).is_file(), f"cannot find file: {self.img_commments_folder/image_name}"
+        ).is_file(), f"cannot find file: {self.imgs_folder/image_name}"
         img_id = int(list(row_df[IMAGE_ID])[0])
         img_id = torch.tensor(img_id, dtype=torch.int)
 
