@@ -9,8 +9,8 @@ class Config:
     # Image
     img_patch_size = 16
 
-    img_w_size = img_patch_size * 32  # 512
-    img_h_size = img_patch_size * 32  # 512
+    img_w_size = img_patch_size * 14  # 224
+    img_h_size = img_patch_size * 14  # 224
 
     img_patches = (img_w_size // img_patch_size) * (img_h_size // img_patch_size)
     img_patch_embedding = 728

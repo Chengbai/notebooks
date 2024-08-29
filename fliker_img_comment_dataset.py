@@ -92,7 +92,8 @@ class ImgCommentDataset(Dataset):
         idx = idx % len(self.img_comments_df)
         # check cache first
         if (
-            self._get_img_cache_file(idx).is_file()
+            False
+            and self._get_img_cache_file(idx).is_file()
             and self._get_comment_cache_file(idx).is_file()
         ):
             img_tensor = torch.load(self._get_img_cache_file(idx))
