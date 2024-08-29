@@ -4,7 +4,7 @@ import torch.nn as nn
 from config import Config
 
 
-class MultiheadSelfAttention(nn.Module):
+class ImgMultiheadSelfAttention(nn.Module):
     def __init__(self, config: Config):
         super().__init__()
         self.config = config
@@ -67,23 +67,30 @@ class ImgTransformerBlock(nn.Module):
     def __init__(self, config: Config):
         super().__init__()
         self.config = config
-        self.multihead_attention = MultiheadSelfAttention(config=config)
+        self.multihead_attention = ImgMultiheadSelfAttention(config=config)
         self.norm = nn.LayerNorm(config.img_patch_embedding)
-        self.fw = nn.Linear(config.img_patch_embedding, config.img_patch_embedding)
-        self.drop_out = nn.Dropout(config.img_dropout)
-        self.act = nn.SiLU()
+
+        # MLP
+        self.mlp = nn.Sequential(
+            nn.Linear(
+                config.img_patch_embedding, 4 * config.img_patch_embedding, bias=True
+            ),
+            nn.GELU(),
+            nn.Linear(
+                4 * config.img_patch_embedding, config.img_patch_embedding, bias=True
+            ),
+            nn.Dropout(config.img_dropout),
+        )
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         """
         x: B x IMG_PATCHES x IMG_PATCH_EMB
         """
         x = self.multihead_attention(x)
+
         x_clone = x.clone()
-
         x = self.norm(x)  # B x IMG_PATCHES x IMG_EMB
-        x = self.drop_out(x)
-        x = self.act(self.fw(x))  # B x IMG_PATCHES x IMG_PATCH_EMB
-
+        x = self.mlp(x)
         x = x + x_clone
         return x
 

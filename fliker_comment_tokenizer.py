@@ -6,7 +6,6 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "1"
 
 from config import Config
-from fliker_img_comment_dataset import ImgCommentDataset
 from pathlib import Path
 from transformers import AutoTokenizer
 from tqdm import tqdm
@@ -17,12 +16,16 @@ class FlikerCommentTokenizer:
 
     @staticmethod
     def train_tokenizer(config: Config):
+        from fliker_img_comment_dataset import ImgCommentDataset
+
         def _batch_iterator(comments, batch_size=1000):
             for i in tqdm(range(0, len(comments), batch_size)):
                 yield comments[i : i + batch_size]
 
         # Special setup to make train split contains all of the data, in turn we can get all of the comments.
-        dataset = ImgCommentDataset(config=config, train_test_split_portion=1.0)
+        dataset = ImgCommentDataset(
+            config=config, split="train", split_portions=(1.0, 0, 0)
+        )
         assert dataset.img_comments_df is not None
         assert "comment" in dataset.img_comments_df
         comments = list(dataset.img_comments_df["comment"])

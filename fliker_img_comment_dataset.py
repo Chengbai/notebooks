@@ -2,17 +2,22 @@ import tiktoken
 import pandas as pd
 
 from config import Config
+from fliker_comment_tokenizer import FlikerCommentTokenizer
 from img_util import load_img_tensor
 from pathlib import Path
+from tqdm import tqdm
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+from typing import Tuple
 
 COMMENT = "comment"
 COMMENT_NUMBER = "comment_number"
 IMAGE_ID = "image_id"
 IMAGE_NAME = "image_name"
 TRAIN = "train"
+EVAL = "eval"
 TEST = "test"
 
 
@@ -40,55 +45,99 @@ class ImgCommentDataset(Dataset):
     def __init__(
         self,
         config: Config,
-        train_test_split: str = TRAIN,
-        train_test_split_portion: float = 0.8,
+        split: str = TRAIN,
+        split_portions: Tuple[float, float] = (0.72, 0.18, 0.1),
     ):
         self.config = config
         self.img_comments_file = config.img_comments_folder / "results.csv"
         self.imgs_folder = config.img_comments_folder / "flickr30k_images"
 
-        self.train_test_split = train_test_split
-        self.train_test_split_portion = train_test_split_portion
+        self.split = split
+        self.split_portions = split_portions
 
         # The current `results.csv` file is using "| " to seperate 3 columns.
         # For the pd.read_csv, the `sep` here is given as a regular expression.
         df = pd.read_csv(self.img_comments_file, sep="|")
         df = enrich_img_id(df)
-        train_split_len = int(len(df) * self.train_test_split_portion)
-        if self.train_test_split == TRAIN:
-            self.img_comments_df = df[:train_split_len]
+        train_split_index = int(len(df) * self.split_portions[0])
+        eval_split_index = int(
+            len(df) * (self.split_portions[0] + self.split_portions[1])
+        )
+        if self.split == TRAIN:
+            self.img_comments_df = df[:train_split_index]
+        elif self.split == EVAL:
+            self.img_comments_df = df[train_split_index:eval_split_index]
         else:
-            self.img_comments_df = df[train_split_len:]
+            assert self.split == TEST
+            self.img_comments_df = df[eval_split_index:]
 
-        self.text_encoder = tiktoken.get_encoding(config.text_tiktokenizer)
+        # self.text_tokenizer = tiktoken.get_encoding(config.text_tiktokenizer)
+        self.text_tokenizer = FlikerCommentTokenizer.get_tokenizer(config=config)
+
+    def _get_img_cache_file(self, idx: int) -> Path:
+        folder_path = self.config.img_comments_folder / "cache" / self.split
+        folder_path.mkdir(parents=True, exist_ok=True)
+        return folder_path / f"img_tensor_{idx}.pt"
+
+    def _get_comment_cache_file(self, idx: int) -> Path:
+        folder_path = self.config.img_comments_folder / "cache" / self.split
+        folder_path.mkdir(parents=True, exist_ok=True)
+        return folder_path / f"comment_tokens_{idx}.pt"
 
     def __len__(self):
         return len(self.img_comments_df)
 
     def __getitem__(self, idx: int):
-        print(f"idx: {idx}")
-        row_df = self.img_comments_df[idx : idx + 1]
-        image_name = str(list(row_df[IMAGE_NAME])[0])
-        assert (
-            self.imgs_folder / image_name
-        ).is_file(), f"cannot find file: {self.imgs_folder/image_name}"
-        img_id = int(list(row_df[IMAGE_ID])[0])
-        img_id = torch.tensor(img_id, dtype=torch.int)
-
-        comment_number = int(list(row_df[COMMENT_NUMBER])[0])
-        comment = str(list(row_df[COMMENT])[0])
-        comment_encoding = self.text_encoder.encode(comment)
-        if len(comment_encoding) > self.config.max_text_len:
-            comment_encoding = comment_encoding[: self.config.max_text_len]
+        # print(f"idx: {idx}")
+        idx = idx % len(self.img_comments_df)
+        # check cache first
+        if (
+            self._get_img_cache_file(idx).is_file()
+            and self._get_comment_cache_file(idx).is_file()
+        ):
+            img_tensor = torch.load(self._get_img_cache_file(idx))
+            comment_tokens = torch.load(self._get_comment_cache_file(idx))
+            item = self.img_comments_df.iloc[idx]
+            img_id = torch.tensor(item[IMAGE_ID], dtype=torch.int)
         else:
-            # TODO: review append `<|endoftext|>` - 199999 logic
-            comment_encoding = comment_encoding + [
-                199999 for _ in range(self.config.max_text_len - len(comment_encoding))
-            ]
-        assert len(comment_encoding) == self.config.max_text_len
-        comment_encoding = torch.tensor(comment_encoding, dtype=torch.int)
+            item = self.img_comments_df.iloc[idx]
+            image_name = item[IMAGE_NAME]
+            img_id = item[IMAGE_ID]
+            comment_number = item[COMMENT_NUMBER]
+            comment = str(item[COMMENT])
 
-        # return load_img_tensor(self.imgs_folder/image_name), comment_number, comment, comment_encoding
-        img_tensor = load_img_tensor(self.config, self.imgs_folder / image_name)
+            # row_df = self.img_comments_df[idx : idx + 1]
+            # image_name = str(list(row_df[IMAGE_NAME])[0])
+            assert (
+                self.imgs_folder / image_name
+            ).is_file(), f"cannot find file: {self.imgs_folder/image_name}"
+            img_id = torch.tensor(img_id, dtype=torch.int)
 
-        return img_tensor, img_id, comment_encoding
+            # FlikerCommentTokenizer `encode` always auto prefix with `<bos>`
+            comment_tokens = self.text_tokenizer.encode(comment)
+            if len(comment_tokens) > self.config.max_text_len:
+                comment_tokens = comment_tokens[: self.config.max_text_len]
+            else:
+                # TODO: review append `<pad>` - 0 logic
+                comment_tokens = comment_tokens + [
+                    0 for _ in range(self.config.max_text_len - len(comment_tokens))
+                ]
+            assert len(comment_tokens) == self.config.max_text_len
+            comment_tokens = torch.tensor(comment_tokens, dtype=torch.int)
+
+            # return load_img_tensor(self.imgs_folder/image_name), comment_number, comment, comment_tokens
+            img_tensor = load_img_tensor(self.config, self.imgs_folder / image_name)
+
+        return img_tensor, img_id, comment_tokens
+
+    def cache_data(self):
+        for idx in tqdm(range(len(self)), total=len(self)):
+            img_tensor, img_id, comment_tokens = self[idx]
+            torch.save(
+                img_tensor,
+                self._get_img_cache_file(idx),
+            )
+            torch.save(
+                comment_tokens,
+                self._get_comment_cache_file(idx),
+            )

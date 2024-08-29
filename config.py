@@ -25,6 +25,12 @@ class Config:
     text_tiktokenizer = "o200k_base"
     max_text_len = 50
     text_token_embedding = 728
+    text_transformer_heads = 8
+    text_transformer_blocks = 6
+    text_dropout = 0.0
+
+    # Construstrive Learning
+    img_text_proj_features = 1024
 
     # huggingface
     # Create access token via: https://huggingface.co/settings/tokens, and add it into the env variable `hf_access_token`
