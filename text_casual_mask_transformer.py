@@ -7,7 +7,7 @@ import torch.nn as nn
 
 
 class TextMaskedMultiheadSelfAttention(nn.Module):
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, mask: torch.tensor = None):
         super().__init__()
         self.config = config
         self.wq = nn.Linear(
@@ -22,7 +22,10 @@ class TextMaskedMultiheadSelfAttention(nn.Module):
         )  # W = TEXT_SEQ x TEXT_EMB
 
         self.norm = nn.LayerNorm(config.text_token_embedding)
-        self.mask = torch.tril(torch.ones(config.max_text_len, config.max_text_len))
+        if mask is None:
+            self.mask = torch.tril(torch.ones(config.max_text_len, config.max_text_len))
+        else:
+            self.mask = mask
         self.softmax = nn.Softmax(dim=-1)  # softmax accross the last dim
 
     def forward(self, x: torch.tensor) -> torch.tensor:
@@ -63,10 +66,12 @@ class TextMaskedMultiheadSelfAttention(nn.Module):
 
 
 class TextTransformerBlock(nn.Module):
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, mask: torch.tensor = None):
         super().__init__()
         self.config = config
-        self.multihead_attention = TextMaskedMultiheadSelfAttention(config=config)
+        self.multihead_attention = TextMaskedMultiheadSelfAttention(
+            config=config, mask=mask
+        )
         self.norm = nn.LayerNorm(config.text_token_embedding)
 
         # MLP
@@ -95,13 +100,13 @@ class TextTransformerBlock(nn.Module):
 
 
 class TextMaskedTransformer(nn.Module):
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, mask: torch.tensor = None):
         super().__init__()
         self.config = config
         self.text_token_embedding = TextTokenEmbedding(config=config)
         self.blocks = nn.Sequential(
             *[
-                TextTransformerBlock(config=config)
+                TextTransformerBlock(config=config, mask=mask)
                 for _ in range(config.text_transformer_blocks)
             ]
         )
