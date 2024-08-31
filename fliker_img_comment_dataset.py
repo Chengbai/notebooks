@@ -84,6 +84,11 @@ class ImgCommentDataset(Dataset):
         folder_path.mkdir(parents=True, exist_ok=True)
         return folder_path / f"comment_tokens_{idx}.pt"
 
+    def _get_comment_mask_cache_file(self, idx: int) -> Path:
+        folder_path = self.config.img_comments_folder / "cache" / self.split
+        folder_path.mkdir(parents=True, exist_ok=True)
+        return folder_path / f"comment_mask_{idx}.pt"
+
     def __len__(self):
         return len(self.img_comments_df)
 
@@ -98,6 +103,7 @@ class ImgCommentDataset(Dataset):
         ):
             img_tensor = torch.load(self._get_img_cache_file(idx))
             comment_tokens = torch.load(self._get_comment_cache_file(idx))
+            comment_ask = torch.load(self._get_comment_mask_cache_file(idx))
             item = self.img_comments_df.iloc[idx]
             img_id = torch.tensor(item[IMAGE_ID], dtype=torch.int)
         else:
@@ -118,22 +124,31 @@ class ImgCommentDataset(Dataset):
             comment_tokens = self.text_tokenizer.encode(comment)
             if len(comment_tokens) > self.config.max_text_len:
                 comment_tokens = comment_tokens[: self.config.max_text_len]
+                comment_mask = torch.tensor(
+                    [1] * self.config.max_text_len, dtype=torch.int8
+                )
             else:
                 # TODO: review append `<pad>` - 0 logic
                 comment_tokens = comment_tokens + [
                     0 for _ in range(self.config.max_text_len - len(comment_tokens))
                 ]
+                comment_mask = torch.tensor(
+                    [1] * len(comment_tokens)
+                    + [0] * (self.config.max_text_len - len(comment_tokens)),
+                    dtype=torch.int8,
+                )
+
             assert len(comment_tokens) == self.config.max_text_len
-            comment_tokens = torch.tensor(comment_tokens, dtype=torch.int)
+            comment_tokens = torch.tensor(comment_tokens, dtype=torch.long)
 
             # return load_img_tensor(self.imgs_folder/image_name), comment_number, comment, comment_tokens
             img_tensor = load_img_tensor(self.config, self.imgs_folder / image_name)
 
-        return img_tensor, img_id, comment_tokens
+        return img_tensor, img_id, comment_tokens, comment_mask
 
     def cache_data(self):
         for idx in tqdm(range(len(self)), total=len(self)):
-            img_tensor, img_id, comment_tokens = self[idx]
+            img_tensor, img_id, comment_tokens, comment_mask = self[idx]
             torch.save(
                 img_tensor,
                 self._get_img_cache_file(idx),
@@ -141,4 +156,8 @@ class ImgCommentDataset(Dataset):
             torch.save(
                 comment_tokens,
                 self._get_comment_cache_file(idx),
+            )
+            torch.save(
+                comment_mask,
+                self._get_comment_mask_cache_file(idx),
             )

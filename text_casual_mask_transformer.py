@@ -111,9 +111,10 @@ class TextMaskedTransformer(nn.Module):
             ]
         )
 
-    def forward(self, x: torch.tensor) -> torch.tensor:
+    def forward(self, x: torch.tensor, need_embedding: bool = True) -> torch.tensor:
         """
         x: batch text embedding, B x TEXT_SEQ x TEXT_EBM
         """
-        x = self.text_token_embedding(x)
+        if need_embedding:
+            x = self.text_token_embedding(x)
         return self.blocks(x)
