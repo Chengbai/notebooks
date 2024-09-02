@@ -12,7 +12,8 @@ from tqdm import tqdm
 
 
 class FlikerCommentTokenizer:
-    TOKENS = 128_000
+    # TOKENS = 128_000
+    TOKENS = 10_000
 
     @staticmethod
     def train_tokenizer(config: Config):
@@ -24,7 +25,9 @@ class FlikerCommentTokenizer:
 
         # Special setup to make train split contains all of the data, in turn we can get all of the comments.
         dataset = ImgCommentDataset(
-            config=config, split="train", split_portions=(1.0, 0, 0)
+            config=config,
+            split="train",
+            split_portions=(1.0, 0, 0),
         )
         assert dataset.img_comments_df is not None
         assert "comment" in dataset.img_comments_df

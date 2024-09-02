@@ -18,16 +18,16 @@ class ImgMultiheadSelfAttention(nn.Module):
         self.wv = nn.Linear(
             config.img_patch_embedding, config.img_patch_embedding
         )  # W = IMG_PATCH_EMB x IMG_PATCH_EMB
-        self.norm = nn.LayerNorm(config.img_patch_embedding)
         self.softmax = nn.Softmax(dim=-1)  # softmax accross the last dim
+        self.out_proj = nn.Linear(
+            config.img_patch_embedding, config.img_patch_embedding
+        )
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         """
         x: B x IMG_PATCHES x IMG_PATCH_EMB
         """
         B, IMG_PATCHES, IMG_PATCH_EMB = x.size()
-        x_clone = x.clone()
-        x = self.norm(x)
         qx = self.wq(x)  # B x IMG_PATCHES x IMG_PATCH_EMB
         qx = qx.view(B, IMG_PATCHES, self.config.img_transformer_heads, -1).transpose(
             1, 2
@@ -51,8 +51,8 @@ class ImgMultiheadSelfAttention(nn.Module):
             1, 2
         ).contiguous()  # B x IMG_PATCHES x IMG_HEADS x IMG_HEAD_EMB
         vx = vx.view(B, IMG_PATCHES, -1)  # B x IMG_PATCHES x IMG_EMB
-        x = x_clone + vx
-        return x
+        output = self.out_proj(vx)
+        return output
 
 
 class ImgTransformerBlock(nn.Module):
@@ -68,7 +68,8 @@ class ImgTransformerBlock(nn.Module):
         super().__init__()
         self.config = config
         self.multihead_attention = ImgMultiheadSelfAttention(config=config)
-        self.norm = nn.LayerNorm(config.img_patch_embedding)
+        self.norm1 = nn.LayerNorm(config.img_patch_embedding)
+        self.norm2 = nn.LayerNorm(config.img_patch_embedding)
 
         # MLP
         self.mlp = nn.Sequential(
@@ -86,12 +87,15 @@ class ImgTransformerBlock(nn.Module):
         """
         x: B x IMG_PATCHES x IMG_PATCH_EMB
         """
+        residue = x
+        x = self.norm1(x)  # B x IMG_PATCHES x IMG_EMB
         x = self.multihead_attention(x)
+        x += residue
 
-        x_clone = x.clone()
-        x = self.norm(x)  # B x IMG_PATCHES x IMG_EMB
+        residue = x
+        x = self.norm2(x)  # B x IMG_PATCHES x IMG_EMB
         x = self.mlp(x)
-        x = x + x_clone
+        x += residue
         return x
 
 

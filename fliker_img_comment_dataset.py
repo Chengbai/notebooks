@@ -72,7 +72,7 @@ class ImgCommentDataset(Dataset):
             self.img_comments_df = df[eval_split_index:]
 
         # self.text_tokenizer = tiktoken.get_encoding(config.text_tiktokenizer)
-        self.text_tokenizer = FlikerCommentTokenizer.get_tokenizer(config=config)
+        self.text_tokenizer = None
 
     def _get_img_cache_file(self, idx: int) -> Path:
         folder_path = self.config.img_comments_folder / "cache" / self.split
@@ -121,6 +121,10 @@ class ImgCommentDataset(Dataset):
             img_id = torch.tensor(img_id, dtype=torch.int)
 
             # FlikerCommentTokenizer `encode` always auto prefix with `<bos>`
+            if self.text_tokenizer is None:
+                self.text_tokenizer = FlikerCommentTokenizer.get_tokenizer(
+                    config=self.config
+                )
             comment_tokens = self.text_tokenizer.encode(comment)
             if len(comment_tokens) > self.config.max_text_len:
                 comment_tokens = comment_tokens[: self.config.max_text_len]

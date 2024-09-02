@@ -42,7 +42,7 @@ class ImageEmbedding(nn.Module):
         B, IMG_PATCH_EMB, _, _ = x.size()
         x = x.view(B, IMG_PATCH_EMB, -1)  # => B x IMG_PATCH_EMB x IMG_PATCH_SEQ
         x = x.permute(0, 2, 1)  # => B x IMG_PATCH_SEQ x IMG_PATCH_EMB
-        x = x + self.pos_embedding(
+        x += self.pos_embedding(
             torch.arange(self.config.img_patches).to(device=x.device)
         )
 
