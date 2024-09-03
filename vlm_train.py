@@ -296,9 +296,11 @@ def train(model: ImgLanguageModel, train_setting: TrainSetting, writer: SummaryW
 
 def create_optimizer(config: Config, train_setting: TrainSetting, model: nn.Module):
     optimizer = torch.optim.AdamW(params=model.parameters(), lr=train_setting.lr)
+    # cqKMSkZKhJHGDHkcxSfU
     # scheduler = torch.optim.lr_scheduler.OneCycleLR(
     #     optimizer, max_lr=lr, steps_per_epoch=len(train_dataloader), epochs=epoches
     # )
+    # ujlBwmQYUsBdDW
     train_setting.optimizer = optimizer
     return optimizer
 
