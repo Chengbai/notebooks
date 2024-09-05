@@ -32,6 +32,11 @@ class ImageEmbedding(nn.Module):
         self.pos_embedding = nn.Embedding(
             config.img_patches, config.img_patch_embedding
         )
+        self.initialize_parameters()
+
+    def initialize_parameters(self):
+        nn.init.normal_(self.conv.weight, std=0.2)
+        nn.init.normal_(self.pos_embedding.weight, std=0.02)
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         """

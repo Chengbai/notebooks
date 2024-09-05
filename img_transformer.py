@@ -72,16 +72,25 @@ class ImgTransformerBlock(nn.Module):
         self.norm2 = nn.LayerNorm(config.img_patch_embedding)
 
         # MLP
+        self.linear1 = nn.Linear(
+            config.img_patch_embedding, 4 * config.img_patch_embedding, bias=True
+        )
+
+        self.linear2 = nn.Linear(
+            4 * config.img_patch_embedding, config.img_patch_embedding, bias=True
+        )
+
         self.mlp = nn.Sequential(
-            nn.Linear(
-                config.img_patch_embedding, 4 * config.img_patch_embedding, bias=True
-            ),
+            self.linear1,
             nn.GELU(),
-            nn.Linear(
-                4 * config.img_patch_embedding, config.img_patch_embedding, bias=True
-            ),
+            self.linear2,
             nn.Dropout(config.img_dropout),
         )
+        self.initialize_parameters()
+
+    def initialize_parameters(self):
+        nn.init.normal_(self.linear1.weight, std=self.linear1.in_features**-0.5)
+        nn.init.normal_(self.linear2.weight, std=self.linear2.in_features**-0.5)
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         """

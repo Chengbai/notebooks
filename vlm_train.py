@@ -31,7 +31,7 @@ class TrainSetting:
     eval_interval = 100
     eval_steps = 10
     lr = 5e-4
-    max_l2_grad_norm = 20
+    max_l2_grad_norm = 5
 
     train_dataloader: DataLoader = None
     eval_dataloader: DataLoader = None
@@ -327,14 +327,35 @@ def get_train_device(train_setting: TrainSetting):
     return device
 
 
+def load_model(config: Config, train_setting: TrainSetting, model_path: str):
+    model_trained = ImgLanguageModel(config=config)
+    model_trained.load_state_dict(torch.load(model_path))
+    model_trained = model_trained.to(train_setting.device)
+    return model_trained
+
+
 def train_model():
     config = Config()
     train_setting = TrainSetting()
 
-    create_dataloaders(config=config, train_setting=train_setting)
+    # fine turn
+    train_setting.lr = 1e-4
 
-    model = create_model(config=config, train_setting=train_setting)
     device = get_train_device(train_setting=train_setting)
+
+    create_dataloaders(
+        config=config,
+        train_setting=train_setting,
+    )
+
+    # model = create_model(config=config, train_setting=train_setting)
+    model = load_model(
+        config=config,
+        train_setting=train_setting,
+        model_path="/Users/chengbai/ml/cheng_git/notebooks/vlm_caption_model_20240905_023757_final",
+    )
+    # if train_setting.device != torch.device("mps"):
+    #     model = torch.compile(model)
 
     model = model.to(device)
     optimizer = create_optimizer(

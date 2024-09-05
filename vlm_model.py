@@ -125,6 +125,7 @@ class ImgLanguageModel(nn.Module):
         )
         self.img_softmax = nn.LogSoftmax(dim=-1)
         self.img_norm = nn.LayerNorm(config.img_patch_embedding)
+        self.img_token_weight = nn.Parameter(torch.rand(config.img_patches))
 
         # self.text_embedding = TextTokenEmbedding(config=config)
         self.text_transformer = TextMaskedTransformer(config=config)
@@ -150,6 +151,17 @@ class ImgLanguageModel(nn.Module):
             tokenizer=self.text_transformer.text_token_embedding.text_encoder,
         )
 
+        self.initialize_parameters()
+
+    def initialize_parameters(self):
+        img_std = self.img_proj.in_features**-0.5
+        nn.init.normal_(self.img_proj.weight, std=img_std)
+
+        nn.init.normal_(self.img_token_weight, std=0.2)
+
+        text_std = self.text_proj.in_features**-0.5
+        nn.init.normal_(self.text_proj.weight, std=text_std)
+
     def forward(
         self,
         batch_img_tensor: torch.tensor,
@@ -172,6 +184,13 @@ class ImgLanguageModel(nn.Module):
         img_contrastive_feature = self.img_norm(
             img_feature[:, -1, :]
         )  # B x IMG_EMB, take the last one
+        # img_contrastive_feature = self.img_norm(
+        #     torch.einsum(
+        #         "bnf,n->bf",
+        #         img_feature,
+        #         self.img_token_weight.to(batch_img_tensor.device),
+        #     )
+        # )  # B x IMG_EMB
         # print(f"img_feature: {img_feature.size()}")
 
         # img_feature_flatten = self.img_flatten(img_feature)

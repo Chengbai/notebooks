@@ -30,6 +30,15 @@ class TextMaskedMultiheadSelfAttention(nn.Module):
         self.out_proj = nn.Linear(
             config.text_token_embedding, config.text_token_embedding
         )
+        self.initialize_parameters()
+
+    def initialize_parameters(self):
+        nn.init.normal_(self.wq.weight, std=self.wq.in_features**-0.5)
+        nn.init.normal_(self.wk.weight, std=self.wk.in_features**-0.5)
+        nn.init.normal_(self.wv.weight, std=self.wv.in_features**-0.5)
+
+        std = self.out_proj.in_features**-0.5
+        nn.init.normal_(self.out_proj.weight, std=std)
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         """
@@ -80,16 +89,23 @@ class TextTransformerBlock(nn.Module):
         self.norm2 = nn.LayerNorm(config.text_token_embedding)
 
         # MLP
+        self.linear1 = nn.Linear(
+            config.text_token_embedding, 4 * config.text_token_embedding, bias=True
+        )
+        self.linear2 = nn.Linear(
+            4 * config.text_token_embedding, config.text_token_embedding, bias=True
+        )
         self.mlp = nn.Sequential(
-            nn.Linear(
-                config.text_token_embedding, 4 * config.text_token_embedding, bias=True
-            ),
+            self.linear1,
             nn.GELU(),
-            nn.Linear(
-                4 * config.text_token_embedding, config.text_token_embedding, bias=True
-            ),
+            self.linear2,
             nn.Dropout(config.text_dropout),
         )
+        self.initialize_parameters()
+
+    def initialize_parameters(self):
+        nn.init.normal_(self.linear1.weight, std=self.linear1.in_features**-0.5)
+        nn.init.normal_(self.linear2.weight, std=self.linear2.in_features**-0.5)
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         """
