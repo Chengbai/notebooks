@@ -68,7 +68,8 @@ class ImgCaptionModel(nn.Module):
         img_feature: torch.tensor,
         text_feature: torch.tensor,
         text_mask: torch.tensor,
-        target_text_token: torch.tensor,
+        batch_target_text_token: torch.tensor,
+        target_text_mask_tensor: torch.tensor,
         bos_embedding: torch.tensor,
     ):
         """
@@ -76,7 +77,7 @@ class ImgCaptionModel(nn.Module):
             - img_feature: B x IMG_PATCHES x IMG_PATCH_EMB
             - text_feature: B x TEXT_TOKEN x TEXT_EMB
             - text_mask: B x TEXT_TOKEN x 1
-            - target_text_token: B x TEXT_TOKEN
+            - batch_target_text_token: B x TEXT_TOKEN
         outputs:
             - text prediction:
             - loss
@@ -97,18 +98,40 @@ class ImgCaptionModel(nn.Module):
         )  # B x [IMG_PATCHES + 1 + TEXT_TOKEN] x IMG_PATCH_EMB
         x = self.lm_head(x)  # B x [IMG_PATCHES + 1 + TEXT_TOKEN] x vocab_size
 
-        if target_text_token is None:
+        if batch_target_text_token is None:
             loss = None
         else:
             # extract the last `self.config.max_text_len` token positions
             text_pos_mask = torch.arange(start=-self.config.max_text_len, end=0, step=1)
-            text_logits = x[:, text_pos_mask, :]  # B x TEXT_TOKEN x vocab_size
-            B, TEXT_TOKEN, vocab_size = text_logits.size()
-            text_logits = text_logits.view(B * TEXT_TOKEN, -1)
-            target_text_token = target_text_token.view(B * TEXT_TOKEN)
-            loss = F.cross_entropy(text_logits, target_text_token, reduction="mean")
+            batch_text_logits = x[:, text_pos_mask, :]  # B x TEXT_TOKEN x vocab_size
 
-        return text_logits, loss
+            B, TEXT_TOKEN, vocab_size = batch_text_logits.size()
+
+            ############################################################################
+            target_text_tokens = torch.argmax(
+                target_text_mask_tensor, dim=1, keepdim=False
+            )
+            batch_text_loss = torch.tensor(0.0, device=batch_target_text_token.device)
+            for bi, token in zip(
+                torch.arange(B, device=batch_target_text_token.device),
+                target_text_tokens,
+            ):
+                target_text_logits = batch_text_logits[bi][: token + 1]
+                target_text_token = batch_target_text_token[bi][: token + 1]
+                target_text_loss = F.cross_entropy(
+                    target_text_logits, target_text_token, reduction="mean"
+                )
+                batch_text_loss += target_text_loss
+
+            ############################################################################
+
+            # batch_text_logits = batch_text_logits.view(B * TEXT_TOKEN, -1)
+            # batch_target_text_token = batch_target_text_token.view(B * TEXT_TOKEN)
+            # batch_text_loss = F.cross_entropy(
+            #     batch_text_logits, batch_target_text_token, reduction="mean"
+            # )
+
+        return batch_text_logits, batch_text_loss
 
 
 class ImgLanguageModel(nn.Module):
@@ -261,7 +284,8 @@ class ImgLanguageModel(nn.Module):
             img_feature=img_feature,
             text_feature=text_feature,
             text_mask=(batch_text_tensor != 0),
-            target_text_token=batch_text_tensor,
+            batch_target_text_token=batch_text_tensor,
+            target_text_mask_tensor=batch_text_mask_tensor,
             bos_embedding=bos_embedding,
         )
         # print(f"lm_logits: {lm_logits.size()}")

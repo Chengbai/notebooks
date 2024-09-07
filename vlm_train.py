@@ -348,12 +348,12 @@ def train_model():
         train_setting=train_setting,
     )
 
-    # model = create_model(config=config, train_setting=train_setting)
-    model = load_model(
-        config=config,
-        train_setting=train_setting,
-        model_path="/Users/chengbai/ml/cheng_git/notebooks/vlm_caption_model_20240905_023757_final",
-    )
+    model = create_model(config=config, train_setting=train_setting)
+    # model = load_model(
+    #     config=config,
+    #     train_setting=train_setting,
+    #     model_path="/Users/chengbai/ml/cheng_git/notebooks/vlm_caption_model_20240905_023757_final",
+    # )
     # if train_setting.device != torch.device("mps"):
     #     model = torch.compile(model)
 
