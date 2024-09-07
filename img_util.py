@@ -28,18 +28,20 @@ def load_img_tensor(config: Config, img_file_path: Path) -> torch.tensor:
     # Transforming and augmenting images
     img_transform = v2.Compose(
         [
+            _convert_image_to_rgb,
+            v2.ToImage(),
+            v2.ToDtype(
+                torch.uint8, scale=True
+            ),  # optional, most input are already uint8 at this point
             v2.RandomResizedCrop(
                 size=(config.img_h_size, config.img_w_size),
-                scale=(0.8, 1.0),
+                scale=(0.6, 1.0),
                 antialias=True,
             ),
-            v2.Resize(
-                size=(config.img_h_size, config.img_w_size),
-                interpolation=BICUBIC,
-            ),
-            v2.CenterCrop(size=(config.img_h_size, config.img_w_size)),
-            _convert_image_to_rgb,
-            v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
+            v2.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5.0)),
+            v2.ColorJitter(brightness=0.5, hue=0.3),
+            v2.RandomHorizontalFlip(p=0.5),
+            v2.ToDtype(torch.float32, scale=True),  # Normalize expects float input
             v2.Normalize(
                 (0.48145466, 0.4578275, 0.40821073),
                 (0.26862954, 0.26130258, 0.27577711),
