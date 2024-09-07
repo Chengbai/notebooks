@@ -19,14 +19,14 @@ class Config:
     img_hidden = 1024
     img_transformer_heads = 8
     img_dropout = 0.0
-    img_transformer_blocks = 6
+    img_transformer_blocks = 14
 
     # Text
     text_tiktokenizer = "o200k_base"
     max_text_len = 50
     text_token_embedding = 728
     text_transformer_heads = 8
-    text_transformer_blocks = 6
+    text_transformer_blocks = 14
     text_dropout = 0.0
 
     # Construstrive Learning

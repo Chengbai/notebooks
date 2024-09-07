@@ -123,6 +123,9 @@ class ImgCaptionModel(nn.Module):
                 )
                 batch_text_loss += target_text_loss
 
+            batch_text_loss = batch_text_loss / torch.tensor(
+                B, device=batch_target_text_token.device
+            )
             ############################################################################
 
             # batch_text_logits = batch_text_logits.view(B * TEXT_TOKEN, -1)

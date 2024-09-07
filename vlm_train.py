@@ -339,7 +339,7 @@ def train_model():
     train_setting = TrainSetting()
 
     # fine turn
-    train_setting.lr = 1e-4
+    # train_setting.lr = 1e-4
 
     device = get_train_device(train_setting=train_setting)
 
