@@ -31,7 +31,7 @@ class TrainSetting:
     eval_interval = 100
     eval_steps = 10
     lr = 5e-4
-    max_l2_grad_norm = 5
+    max_l2_grad_norm = 2
 
     train_dataloader: DataLoader = None
     eval_dataloader: DataLoader = None
@@ -112,6 +112,7 @@ def create_model(config: Config, train_setting: TrainSetting):
 
 def eval(
     model: ImgLanguageModel,
+    config: Config,
     train_setting: TrainSetting,
     global_step: int,
     writer: SummaryWriter,
@@ -124,6 +125,7 @@ def eval(
     text_accuracies = []
     with torch.no_grad():
         eval_losses = []
+        weighted_eval_losses = []
         for i, data in enumerate(train_setting.eval_dataloader):
             if i > train_setting.eval_steps:
                 # It takes significant time to do one full eval.
@@ -169,31 +171,92 @@ def eval(
             text_accuracy = text_pred == label_mask
             text_accuracies.extend(text_accuracy)
 
+            # Loss
             writer.add_scalar("eval/Img Loss", img_loss, global_step)
             writer.add_scalar("eval/Text Loss", text_loss, global_step)
             writer.add_scalar("eval/LM Loss", lm_loss, global_step)
             eval_losses.append(img_loss + text_loss + lm_loss)
+
+            # Weighted Loss
+            weighted_img_loss = config.img_loss_weight * img_loss
+            writer.add_scalar(
+                "weighted eval/Img Loss Weight",
+                config.img_loss_weight,
+                global_step,
+            )
+            writer.add_scalar(
+                "weighted eval/Img Loss",
+                weighted_img_loss,
+                global_step,
+            )
+            weighted_text_loss = config.text_loss_weight * text_loss
+            writer.add_scalar(
+                "weighted eval/Text Loss Weight",
+                config.text_loss_weight,
+                global_step,
+            )
+            writer.add_scalar(
+                "weighted eval/Text Loss",
+                weighted_text_loss,
+                global_step,
+            )
+            weighted_lm_loss = config.lm_loss_weight * lm_loss
+            writer.add_scalar(
+                "weighted eval/LM Loss Weight",
+                config.lm_loss_weight,
+                global_step,
+            )
+            writer.add_scalar(
+                "weighted eval/LM Loss",
+                weighted_lm_loss,
+                global_step,
+            )
+            writer.add_scalar(
+                "weighted eval/Loss",
+                weighted_img_loss + weighted_text_loss + weighted_lm_loss,
+                global_step,
+            )
+            weighted_eval_losses.append(
+                weighted_img_loss + weighted_text_loss + weighted_lm_loss
+            )
+
+        # Agg Loss
         eval_losses = torch.tensor(eval_losses)
         avg_eval_loss = eval_losses.mean()
         eval_loss_std = eval_losses.std()
         writer.add_scalar("eval/Loss", avg_eval_loss, global_step)
-        writer.add_scalar("Loss/eval-std", eval_loss_std, global_step)
+        writer.add_scalar("eval/eval-std", eval_loss_std, global_step)
+
+        # Agg Weighted Loss
+        weighted_eval_losses = torch.tensor(weighted_eval_losses)
+        weighted_eval_loss_avg = weighted_eval_losses.mean()
+        weighted_eval_loss_std = weighted_eval_losses.std()
+        writer.add_scalar("weighted eval/Loss", weighted_eval_loss_avg, global_step)
+        writer.add_scalar("weighted eval/eval-std", weighted_eval_loss_std, global_step)
+
+        # Performance
         writer.add_scalar(
-            "eval/Img Accuracy",
+            "perf/Eval Img Accuracy",
             sum(img_accuracies) / len(img_accuracies),
             global_step,
         )
         writer.add_scalar(
-            "eval/Text Accuracy",
+            "perf/Eval Text Accuracy",
             sum(text_accuracies) / len(text_accuracies),
             global_step,
         )
+
     model.train()
     writer.flush()
     return avg_eval_loss, eval_loss_std
 
 
-def train(model: ImgLanguageModel, train_setting: TrainSetting, writer: SummaryWriter):
+def train(
+    model: ImgLanguageModel,
+    config: Config,
+    train_setting: TrainSetting,
+    writer: SummaryWriter,
+):
     best_vloss = torch.tensor(1_000_000)
     with torch.profiler.profile(
         schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
@@ -243,18 +306,60 @@ def train(model: ImgLanguageModel, train_setting: TrainSetting, writer: SummaryW
                     batch_img_id_tensor=batch_img_id_tensor,
                 )
 
+                # Loss
                 writer.add_scalar("train/Img Loss", img_loss, global_step)
                 writer.add_scalar("train/Text Loss", text_loss, global_step)
                 writer.add_scalar("train/LM Loss", lm_loss, global_step)
                 writer.add_scalar(
                     "train/Loss", img_loss + text_loss + lm_loss, global_step
                 )
+
+                # Weighted Loss
+                weighted_img_loss = config.img_loss_weight * img_loss
+                writer.add_scalar(
+                    "weighted train/Img Loss Weight",
+                    config.img_loss_weight,
+                    global_step,
+                )
+                writer.add_scalar(
+                    "weighted train/Img Loss",
+                    weighted_img_loss,
+                    global_step,
+                )
+                weighted_text_loss = config.text_loss_weight * text_loss
+                writer.add_scalar(
+                    "weighted train/Text Loss Weight",
+                    config.text_loss_weight,
+                    global_step,
+                )
+                writer.add_scalar(
+                    "weighted train/Text Loss",
+                    weighted_text_loss,
+                    global_step,
+                )
+                weighted_lm_loss = config.lm_loss_weight * lm_loss
+                writer.add_scalar(
+                    "weighted train/LM Loss Weight",
+                    config.lm_loss_weight,
+                    global_step,
+                )
+                writer.add_scalar(
+                    "weighted train/LM Loss",
+                    weighted_lm_loss,
+                    global_step,
+                )
+                writer.add_scalar(
+                    "weighted train/Loss",
+                    weighted_img_loss + weighted_text_loss + weighted_lm_loss,
+                    global_step,
+                )
+
                 writer.add_scalar(
                     "Learning Rate",
                     train_setting.scheduler.get_last_lr()[-1],
                     global_step,
                 )
-                loss = img_loss + text_loss + lm_loss
+                loss = weighted_img_loss + weighted_text_loss + weighted_lm_loss
                 loss.backward()
                 # ===============================================================================================================
                 nn.utils.clip_grad_norm_(
@@ -282,6 +387,7 @@ def train(model: ImgLanguageModel, train_setting: TrainSetting, writer: SummaryW
                 if train_step > 0 and train_step % train_setting.eval_interval == 0:
                     avg_vloss, _ = eval(
                         model=model,
+                        config=config,
                         train_setting=train_setting,
                         global_step=global_step,
                         writer=writer,
@@ -367,7 +473,7 @@ def train_model():
     assert scheduler is not None
 
     with SummaryWriter(flush_secs=1) as writer:
-        train(model=model, train_setting=train_setting, writer=writer)
+        train(model=model, config=config, train_setting=train_setting, writer=writer)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_path = f"vlm_caption_model_{timestamp}_final"
         torch.save(model.state_dict(), model_path)

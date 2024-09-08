@@ -39,3 +39,8 @@ class Config:
     fliker_comment_tokenizer_local_path = (
         Path(os.path.dirname(__file__)) / "paligemma-3b-mix-224-tokenizer"
     )
+
+    # loss
+    img_loss_weight = 3.0
+    text_loss_weight = 3.0
+    lm_loss_weight = 1.0
