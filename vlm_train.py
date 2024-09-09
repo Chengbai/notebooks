@@ -4,17 +4,19 @@ import pandas as pd
 
 from config import Config
 from datetime import datetime
+from dataclasses import dataclass, asdict
+from fliker_comment_tokenizer import FlikerCommentTokenizer
+from fliker_img_comment_dataset import ImgCommentDataset
 from img_embedding import ImageEmbedding
 from img_transformer import ImgTransformer
 from img_util import show_img_tensor_CHW
-from fliker_comment_tokenizer import FlikerCommentTokenizer
-from fliker_img_comment_dataset import ImgCommentDataset
 from model_util import count_parameters
 from pathlib import Path
-from text_token_embedding import TextTokenEmbedding
 from text_casual_mask_transformer import TextMaskedTransformer
+from text_token_embedding import TextTokenEmbedding
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from typing import Tuple
 from vlm_model import ImgLanguageModel
 
 import torch
@@ -25,10 +27,11 @@ from torch.utils.data import DataLoader
 import torchvision.transforms.functional as VF
 
 
+@dataclass
 class TrainSetting:
     batch_size = 20
     epoches = 5
-    eval_interval = 100
+    eval_interval_steps = 100
     eval_steps = 10
     lr = 5e-4
     max_l2_grad_norm = 2
@@ -40,13 +43,22 @@ class TrainSetting:
     optimizer = None
     scheduler = None
 
+    gradient_agg_steps = 1
+
     device = torch.device("cpu")
 
 
 def create_dataloaders(config: Config, train_setting: TrainSetting):
-    train_dataset = ImgCommentDataset(config, split="train")
-    eval_dataset = ImgCommentDataset(config, split="eval")
-    test_dataset = ImgCommentDataset(config, split="test")
+    split_portions: Tuple[float, float] = (0.72, 0.18, 0.1)
+    train_dataset = ImgCommentDataset(
+        config, split="train", split_portions=split_portions
+    )
+    eval_dataset = ImgCommentDataset(
+        config, split="eval", split_portions=split_portions
+    )
+    test_dataset = ImgCommentDataset(
+        config, split="test", split_portions=split_portions
+    )
     print(f"train_dataset:  {len(train_dataset)}")
     print(f"eval_dataset:  {len(eval_dataset)}")
     print(f"test_dataset:  {len(test_dataset)}")
@@ -268,8 +280,11 @@ def train(
     ) as prof:
         # with torch.mps.profiler.profile(mode="interval", wait_until_completed=False):
         for epoch in range(train_setting.epoches):
+            train_dataloader_len = len(train_setting.train_dataloader)
             for train_step, data in enumerate(train_setting.train_dataloader):
                 global_step = epoch * len(train_setting.train_dataloader) + train_step
+
+                writer.add_scalar("epch", epoch, global_step)
 
                 # Profile
                 if global_step < 1 + 1 + 3:
@@ -289,8 +304,6 @@ def train(
                 # Viz Model
                 # if global_step == 0:
                 #     writer.add_graph(model, (batch_img_tensor, batch_target_tensor))
-
-                train_setting.optimizer.zero_grad()
 
                 (
                     img_loss,
@@ -359,12 +372,24 @@ def train(
                     train_setting.scheduler.get_last_lr()[-1],
                     global_step,
                 )
-                loss = weighted_img_loss + weighted_text_loss + weighted_lm_loss
+                loss = (
+                    weighted_img_loss + weighted_text_loss + weighted_lm_loss
+                ) / train_setting.gradient_agg_steps
+
                 loss.backward()
-                # ===============================================================================================================
-                nn.utils.clip_grad_norm_(
-                    model.parameters(), max_norm=train_setting.max_l2_grad_norm
-                )
+
+                if ((global_step + 1) % train_setting.gradient_agg_steps == 0) or (
+                    global_step + 1 == train_dataloader_len
+                ):
+                    nn.utils.clip_grad_norm_(
+                        model.parameters(), max_norm=train_setting.max_l2_grad_norm
+                    )
+                    train_setting.optimizer.step()
+                    train_setting.optimizer.zero_grad()
+
+                    for _ in range(train_setting.gradient_agg_steps):
+                        train_setting.scheduler.step()
+
                 # ===============================================================================================================
                 # Error: command buffer exited with error status.
                 # The Metal Performance Shaders operations encoded on it may not have completed.
@@ -381,10 +406,16 @@ def train(
                 #         name = Apple M1 Max
                 # retainedReferences = 1
                 # ---------------------------------------------------------------------------------------------------------------
-                train_setting.optimizer.step()
-                train_setting.scheduler.step()
 
-                if train_step > 0 and train_step % train_setting.eval_interval == 0:
+                if (
+                    train_step > 0
+                    and train_step % train_setting.eval_interval_steps == 0
+                ):
+                    assert (
+                        train_setting.eval_interval_steps
+                        % train_setting.gradient_agg_steps
+                        == 0
+                    ), ""
                     avg_vloss, _ = eval(
                         model=model,
                         config=config,
@@ -396,8 +427,23 @@ def train(
                     if avg_vloss is not None and avg_vloss < best_vloss:
                         best_vloss = avg_vloss
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        model_path = f"vlm_caption_model_{epoch}_{timestamp}"
-                        torch.save(model.state_dict(), model_path)
+                        model_path = (
+                            f"vlm_caption_model_{epoch}_{timestamp}_{global_step}.pt"
+                        )
+                        torch.save(
+                            {
+                                "epoch": epoch,
+                                "global_step": global_step,
+                                "total_steps": len(train_setting.train_dataloader)
+                                * train_setting.epoches,
+                                "model_state_dict": model.state_dict(),
+                                "optimizer_state_dict": train_setting.optimizer.state_dict(),
+                                "loss": best_vloss,
+                                "config": asdict(config),
+                                "train_settings": asdict(train_setting),
+                            },
+                            model_path,
+                        )
 
 
 def create_optimizer(config: Config, train_setting: TrainSetting, model: nn.Module):
@@ -475,8 +521,21 @@ def train_model():
     with SummaryWriter(flush_secs=1) as writer:
         train(model=model, config=config, train_setting=train_setting, writer=writer)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_path = f"vlm_caption_model_{timestamp}_final"
-        torch.save(model.state_dict(), model_path)
+        model_path = f"vlm_caption_model_{timestamp}_final.pt"
+        torch.save(
+            {
+                "epoch": train_setting.epoches,  # final epoch
+                "total_steps": len(train_setting.train_dataloader)
+                * train_setting.epoches,
+                "global_step": len(train_setting.train_dataloader)
+                * train_setting.epoches,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "config": asdict(config),
+                "train_settings": asdict(train_setting),
+            },
+            model_path,
+        )
 
 
 if __name__ == "__main__":

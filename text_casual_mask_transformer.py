@@ -30,6 +30,7 @@ class TextMaskedMultiheadSelfAttention(nn.Module):
         self.out_proj = nn.Linear(
             config.text_token_embedding, config.text_token_embedding
         )
+
         self.initialize_parameters()
 
     def initialize_parameters(self):

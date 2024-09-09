@@ -22,6 +22,14 @@ class ImgMultiheadSelfAttention(nn.Module):
         self.out_proj = nn.Linear(
             config.img_patch_embedding, config.img_patch_embedding
         )
+        self.attention_bias = nn.Parameter(
+            torch.empty(config.img_patches, config.img_patches)
+        )
+
+        self.initialize_parameters()
+
+    def initialize_parameters(self):
+        nn.init.normal_(self.attention_bias)
 
     def forward(self, x: torch.tensor) -> torch.tensor:
         """
@@ -38,8 +46,9 @@ class ImgMultiheadSelfAttention(nn.Module):
         )  # B x IMG_HEADS x IMG_HEAD_EMB x IMG_PATCHES
         attention = qx @ kx  # B x IMG_HEADS x IMG_PATCHES x IMG_PATCHES
         attention = attention / (
-            IMG_PATCHES**0.5
+            IMG_PATCH_EMB**0.5
         )  # B x IMG_HEADS x IMG_PATCHES x IMG_PATCHES
+        attention += self.attention_bias.to(x.device)
         attention = self.softmax(attention)
 
         vx = self.wv(x)  # B x IMG_PATCHES x IMG_PATCH_EMB
