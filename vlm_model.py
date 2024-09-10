@@ -7,6 +7,7 @@ from datetime import datetime
 from img_embedding import ImageEmbedding
 from img_transformer import ImgTransformer
 from img_util import show_img_tensor_CHW
+from loss import constrastive_logit_loss
 from fliker_comment_tokenizer import FlikerCommentTokenizer
 from fliker_img_comment_dataset import ImgCommentDataset
 from model_util import count_parameters
@@ -247,8 +248,6 @@ class ImgLanguageModel(nn.Module):
         # Contrastive learning
         contrastive_scores = img_feature_proj @ text_feature_proj.T
         # print(f"contractive_scores: {contrastive_scores}")  # B x img_text_proj_features
-
-        from loss import constrastive_logit_loss
 
         img_loss = constrastive_logit_loss(contrastive_scores)
         text_loss = constrastive_logit_loss(contrastive_scores.T)

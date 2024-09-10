@@ -19,8 +19,13 @@ def constrastive_logit_loss(contrastive_logit: torch.tensor) -> torch.tensor:
     contrastive_logit_table = contrastive_logit - max_v
 
     logit_exp = contrastive_logit_table.exp()
-    mask = torch.eye(N, dtype=torch.bool, device=device)
-    masked_logit_exp = logit_exp.where(~mask, 0.0).to(device)
+
+    # Note: Following mask logic could put the loss negative!
+    # Comment out for more thinking.
+    # mask = torch.eye(N, dtype=torch.bool, device=device)
+    # masked_logit_exp = logit_exp.where(~mask, 0.0).to(device)
+
+    masked_logit_exp = logit_exp
     masked_logit_exp_agg = masked_logit_exp.sum(dim=-1, keepdim=True)
     target = torch.arange(N, device=device)
     target_exp_logits = logit_exp[torch.arange(N).unsqueeze(1), target.unsqueeze(1)]

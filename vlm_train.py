@@ -16,7 +16,7 @@ from text_casual_mask_transformer import TextMaskedTransformer
 from text_token_embedding import TextTokenEmbedding
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from typing import Tuple
+from typing import List, Tuple
 from vlm_model import ImgLanguageModel
 
 import torch
@@ -31,7 +31,7 @@ import torchvision.transforms.functional as VF
 class TrainSetting:
     batch_size = 20
     epoches = 5
-    eval_interval_steps = 100
+    eval_interval_steps = 2  # 100
     eval_steps = 10
     lr = 5e-4
     max_l2_grad_norm = 2
@@ -44,6 +44,9 @@ class TrainSetting:
     scheduler = None
 
     gradient_agg_steps = 1
+
+    train_accuracy_momentum = 0.9
+    eval_accuracy_momentum = 0.9
 
     device = torch.device("cpu")
 
@@ -263,11 +266,25 @@ def eval(
     return avg_eval_loss, eval_loss_std
 
 
+def log_gradients_in_model(
+    model: nn.Module,
+    parameter_names: List[str],
+    writer: SummaryWriter,
+    global_step: int,
+):
+    if not parameter_names:
+        return
+    for pname, value in model.named_parameters():
+        if pname in parameter_names and value.grad is not None:
+            writer.add_histogram(pname + "/grad", value.grad.cpu(), global_step)
+
+
 def train(
     model: ImgLanguageModel,
     config: Config,
     train_setting: TrainSetting,
     writer: SummaryWriter,
+    debug: bool = False,
 ):
     best_vloss = torch.tensor(1_000_000)
     with torch.profiler.profile(
@@ -278,6 +295,12 @@ def train(
         profile_memory=True,
         with_stack=True,
     ) as prof:
+        running_img_accuracy = torch.tensor(
+            0, dtype=torch.float32, device=torch.device("cpu")
+        )
+        running_text_accuracy = torch.tensor(
+            0, dtype=torch.float32, device=torch.device("cpu")
+        )
         # with torch.mps.profiler.profile(mode="interval", wait_until_completed=False):
         for epoch in range(train_setting.epoches):
             train_dataloader_len = len(train_setting.train_dataloader)
@@ -378,6 +401,14 @@ def train(
 
                 loss.backward()
 
+                if debug:
+                    log_gradients_in_model(
+                        model=model,
+                        parameter_names=["img_embedding.conv.weight"],
+                        writer=writer,
+                        global_step=global_step,
+                    )
+
                 if ((global_step + 1) % train_setting.gradient_agg_steps == 0) or (
                     global_step + 1 == train_dataloader_len
                 ):
@@ -389,6 +420,32 @@ def train(
 
                     for _ in range(train_setting.gradient_agg_steps):
                         train_setting.scheduler.step()
+
+                # Performance
+                img_pred = torch.argmax(img_contrastive_prob, dim=1).cpu()
+                label_mask = torch.arange(img_pred.size()[0]).cpu()
+                img_accuracy = img_pred == label_mask
+                running_img_accuracy = (
+                    train_setting.train_accuracy_momentum * running_img_accuracy
+                    + (1 - train_setting.train_accuracy_momentum) * img_accuracy
+                )
+
+                text_pred = torch.argmax(text_contrastive_prob, dim=1).cpu()
+                text_accuracy = text_pred == label_mask
+                running_text_accuracy = (
+                    train_setting.train_accuracy_momentum * running_img_accuracy
+                    + (1 - train_setting.train_accuracy_momentum) * text_accuracy
+                )
+                writer.add_scalar(
+                    "perf/Train Img Accuracy",
+                    sum(running_img_accuracy) / len(running_img_accuracy),
+                    global_step,
+                )
+                writer.add_scalar(
+                    "perf/Train Text Accuracy",
+                    sum(running_text_accuracy) / len(running_text_accuracy),
+                    global_step,
+                )
 
                 # ===============================================================================================================
                 # Error: command buffer exited with error status.
@@ -486,7 +543,7 @@ def load_model(config: Config, train_setting: TrainSetting, model_path: str):
     return model_trained
 
 
-def train_model():
+def train_model(debug: bool = False):
     config = Config()
     train_setting = TrainSetting()
 
@@ -519,7 +576,13 @@ def train_model():
     assert scheduler is not None
 
     with SummaryWriter(flush_secs=1) as writer:
-        train(model=model, config=config, train_setting=train_setting, writer=writer)
+        train(
+            model=model,
+            config=config,
+            train_setting=train_setting,
+            writer=writer,
+            debug=debug,
+        )
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         model_path = f"vlm_caption_model_{timestamp}_final.pt"
         torch.save(
@@ -539,4 +602,4 @@ def train_model():
 
 
 if __name__ == "__main__":
-    train_model()
+    train_model(debug=False)
