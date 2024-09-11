@@ -31,7 +31,7 @@ import torchvision.transforms.functional as VF
 class TrainSetting:
     batch_size = 20
     epoches = 5
-    eval_interval_steps = 2  # 100
+    eval_interval_steps = 100
     eval_steps = 10
     lr = 5e-4
     max_l2_grad_norm = 2
@@ -412,9 +412,9 @@ def train(
                 if ((global_step + 1) % train_setting.gradient_agg_steps == 0) or (
                     global_step + 1 == train_dataloader_len
                 ):
-                    nn.utils.clip_grad_norm_(
-                        model.parameters(), max_norm=train_setting.max_l2_grad_norm
-                    )
+                    # nn.utils.clip_grad_norm_(
+                    #     model.parameters(), max_norm=train_setting.max_l2_grad_norm
+                    # )
                     train_setting.optimizer.step()
                     train_setting.optimizer.zero_grad()
 

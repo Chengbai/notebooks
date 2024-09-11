@@ -249,38 +249,38 @@ class ImgLanguageModel(nn.Module):
         contrastive_scores = img_feature_proj @ text_feature_proj.T
         # print(f"contractive_scores: {contrastive_scores}")  # B x img_text_proj_features
 
-        img_loss = constrastive_logit_loss(contrastive_scores)
-        text_loss = constrastive_logit_loss(contrastive_scores.T)
+        # img_loss = constrastive_logit_loss(contrastive_scores)
+        # text_loss = constrastive_logit_loss(contrastive_scores.T)
 
         img_contrastive_prob = self.img_softmax(contrastive_scores)
-        # # print(f"img_contrastive_prob: {img_contrastive_prob}")  # B x img_text_proj_features
+        # print(f"img_contrastive_prob: {img_contrastive_prob}")  # B x img_text_proj_features
 
-        # # ===============================================================================
-        # # Img BCE-Loss
-        # # ===============================================================================
-        # # target = torch.eye(
-        # #     contrastive_scores.size()[0], device=contrastive_scores.device
-        # # )
-        # # img_loss = self.bce_loss_fn(contrastive_scores, target)
-        # # text_loss = self.bce_loss_fn(contrastive_scores.T, target)
-
-        # # ===============================================================================
-        # # Img NLL-Loss
-        # # ===============================================================================
-        # target = torch.arange(
-        #     img_contrastive_prob.size()[0], device=img_contrastive_prob.device
+        # ===============================================================================
+        # Img BCE-Loss
+        # ===============================================================================
+        # target = torch.eye(
+        #     contrastive_scores.size()[0], device=contrastive_scores.device
         # )
-        # img_loss = self.loss_fn(img_contrastive_prob, target)
-        # # img_loss = self.loss_fn(img_contrastive_prob, self.target.expand(img_contrastive_prob.size()[0], -1))
-        # # print(f"img_loss: {img_loss}")
+        # img_loss = self.bce_loss_fn(contrastive_scores, target)
+        # text_loss = self.bce_loss_fn(contrastive_scores.T, target)
+
+        # ===============================================================================
+        # Img NLL-Loss
+        # ===============================================================================
+        target = torch.arange(
+            img_contrastive_prob.size()[0], device=img_contrastive_prob.device
+        )
+        img_loss = self.loss_fn(img_contrastive_prob, target)
+        # img_loss = self.loss_fn(img_contrastive_prob, self.target.expand(img_contrastive_prob.size()[0], -1))
+        # print(f"img_loss: {img_loss}")
 
         text_contrastive_prob = self.text_softmax(contrastive_scores.T)
 
-        # # ===============================================================================
-        # # Text NLL-Loss
-        # # ===============================================================================
-        # # print(f"text_contrastive_prob: {text_contrastive_prob}")  # B x img_text_proj_features
-        # text_loss = self.loss_fn(text_contrastive_prob, target)
+        # ===============================================================================
+        # Text NLL-Loss
+        # ===============================================================================
+        # print(f"text_contrastive_prob: {text_contrastive_prob}")  # B x img_text_proj_features
+        text_loss = self.loss_fn(text_contrastive_prob, target)
         # print(f"text_loss: {text_loss}")
 
         bos_embedding = self.text_transformer.text_token_embedding(
