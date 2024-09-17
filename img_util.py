@@ -49,12 +49,17 @@ def load_img_tensor(config: Config, img_file_path: Path) -> torch.tensor:
         ]
     )
 
-    img_tensor = img_transform(img)
+    # augmentation 1
+    img_aug_tensor1 = img_transform(img)
+
+    # augmentation 2
+    img_aug_tensor2 = img_transform(img)
 
     # If original image is a GrayScale, simplly do R=G=B=GrayScale, otherewise, keep as is.
-    img_tensor = img_tensor.expand(3, -1, -1)
+    img_aug_tensor1 = img_aug_tensor1.expand(3, -1, -1)
+    img_aug_tensor2 = img_aug_tensor2.expand(3, -1, -1)
 
-    return img_tensor
+    return img_aug_tensor1, img_aug_tensor2
 
 
 def show_img_tensor_CHW(img_tensor: torch.tensor):

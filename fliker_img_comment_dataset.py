@@ -156,9 +156,17 @@ class ImgCommentDataset(Dataset):
             comment_tokens = torch.tensor(comment_tokens, dtype=torch.long)
 
             # return load_img_tensor(self.imgs_folder/image_name), comment_number, comment, comment_tokens
-            img_tensor = load_img_tensor(self.config, self.imgs_folder / image_name)
+            img_aug_tensor1, img_aug_tensor2 = load_img_tensor(
+                self.config, self.imgs_folder / image_name
+            )
 
-        return img_tensor, img_id, comment_tokens, comment_mask
+        return (
+            img_aug_tensor1,
+            img_aug_tensor2,
+            img_id,
+            comment_tokens,
+            comment_mask,
+        )
 
     def cache_data(self):
         for idx in tqdm(range(len(self)), total=len(self)):

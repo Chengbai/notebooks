@@ -16,6 +16,7 @@ from text_token_embedding import TextTokenEmbedding
 from text_casual_mask_transformer import TextMaskedTransformer
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -218,40 +219,63 @@ class ImgLanguageModel(nn.Module):
 
     def forward(
         self,
-        batch_img_tensor: torch.tensor,
+        batch_aug_img_tensor1: torch.tensor,
+        batch_aug_img_tensor2: torch.tensor,
         batch_text_tensor: torch.tensor,
         batch_text_mask_tensor: torch.tensor,
         batch_img_id_tensor: torch.tensor = None,
     ):
         """
-        batch_img_tensor: B x IMG_PATCHES x IMG_EMB
+        batch_aug_img_tensor1: B x IMG_PATCHES x IMG_EMB
+        batch_aug_img_tensor2: B x IMG_PATCHES x IMG_EMB
         batch_text_tensor: B x TEXT_TOKEN
         batch_text_mask_tensor: B x TEXT_TOKEN
         """
-        img_embedding = self.img_embedding(
-            batch_img_tensor
-        )  # B x IMG_PATCHES x IMG_EMB
-        # print(f"img_encoding: {img_embedding.size()}")
 
-        img_feature = self.img_transfomer(img_embedding)  # B x IMG_PATCHES x IMG_EMB
-        img_feature = self.img_norm(img_feature)  # B x IMG_PATCHES x IMG_EMB
-        img_contrastive_feature = self.img_norm(
-            img_feature[:, -1, :]
-        )  # B x IMG_EMB, take the last one
-        # img_contrastive_feature = self.img_norm(
-        #     torch.einsum(
-        #         "bnf,n->bf",
-        #         img_feature,
-        #         self.img_token_weight.to(batch_img_tensor.device),
-        #     )
-        # )  # B x IMG_EMB
-        # print(f"img_feature: {img_feature.size()}")
+        def _get_batch_img_feature(
+            batch_aug_img_tensor: torch.tensor,
+        ) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+            img_embedding = self.img_embedding(
+                batch_aug_img_tensor
+            )  # B x IMG_PATCHES x IMG_EMB
+            # print(f"img_encoding: {img_embedding.size()}")
 
-        # img_feature_flatten = self.img_flatten(img_feature)
-        # print(f"img_feature_flatten: {img_feature_flatten.size()}")
+            img_feature = self.img_transfomer(
+                img_embedding
+            )  # B x IMG_PATCHES x IMG_EMB
+            img_feature = self.img_norm(img_feature)  # B x IMG_PATCHES x IMG_EMB
+            img_contrastive_feature = self.img_norm(
+                img_feature[:, -1, :]
+            )  # B x IMG_EMB, take the last one
+            # img_contrastive_feature = self.img_norm(
+            #     torch.einsum(
+            #         "bnf,n->bf",
+            #         img_feature,
+            #         self.img_token_weight.to(batch_img_tensor.device),
+            #     )
+            # )  # B x IMG_EMB
+            # print(f"img_feature: {img_feature.size()}")
 
-        img_feature_proj = self.img_proj(img_contrastive_feature)
-        # print(f"img_feature_proj: {img_feature_proj.size()}")  # B x img_text_proj_features
+            # img_feature_flatten = self.img_flatten(img_feature)
+            # print(f"img_feature_flatten: {img_feature_flatten.size()}")
+
+            img_feature_proj = self.img_proj(img_contrastive_feature)
+            # print(f"img_feature_proj: {img_feature_proj.size()}")  # B x img_text_proj_features
+            return img_feature, img_contrastive_feature, img_feature_proj
+
+        img_feature1, img_contrastive_feature1, img_feature_proj1 = (
+            _get_batch_img_feature(batch_aug_img_tensor=batch_aug_img_tensor1)
+        )
+
+        img_feature2, img_contrastive_feature2, img_feature_proj2 = (
+            _get_batch_img_feature(batch_aug_img_tensor=batch_aug_img_tensor2)
+        )
+        img_img_contrastive_scores = img_feature_proj1 @ img_feature_proj2.T
+        img_img_ontrastive_prob = self.img_softmax(img_img_contrastive_scores)
+        target = torch.arange(
+            img_img_ontrastive_prob.size()[0], device=img_img_ontrastive_prob.device
+        )
+        img_img_loss = self.loss_fn(img_img_ontrastive_prob, target)
 
         # text_embedding = self.text_embedding(batch_text_tensor)
         # print(f"text_embedding: {text_embedding.size()}")
@@ -273,13 +297,13 @@ class ImgLanguageModel(nn.Module):
         # print(f"text_feature_proj: {text_feature_proj.size()}")  # B x img_text_proj_features
 
         # Contrastive learning
-        contrastive_scores = img_feature_proj @ text_feature_proj.T
+        img_text_contrastive_scores = img_feature_proj1 @ text_feature_proj.T
         # print(f"contractive_scores: {contrastive_scores}")  # B x img_text_proj_features
 
         # img_loss = constrastive_logit_loss(contrastive_scores)
         # text_loss = constrastive_logit_loss(contrastive_scores.T)
 
-        img_contrastive_prob = self.img_softmax(contrastive_scores)
+        img_text_contrastive_prob = self.img_softmax(img_text_contrastive_scores)
         # print(f"img_contrastive_prob: {img_contrastive_prob}")  # B x img_text_proj_features
 
         # ===============================================================================
@@ -295,27 +319,27 @@ class ImgLanguageModel(nn.Module):
         # Img NLL-Loss
         # ===============================================================================
         target = torch.arange(
-            img_contrastive_prob.size()[0], device=img_contrastive_prob.device
+            img_text_contrastive_prob.size()[0], device=img_text_contrastive_prob.device
         )
-        img_loss = self.loss_fn(img_contrastive_prob, target)
+        img_text_loss = self.loss_fn(img_text_contrastive_prob, target)
         # img_loss = self.loss_fn(img_contrastive_prob, self.target.expand(img_contrastive_prob.size()[0], -1))
         # print(f"img_loss: {img_loss}")
 
-        text_contrastive_prob = self.text_softmax(contrastive_scores.T)
+        text_contrastive_prob = self.text_softmax(img_text_contrastive_scores.T)
 
         # ===============================================================================
         # Text NLL-Loss
         # ===============================================================================
         # print(f"text_contrastive_prob: {text_contrastive_prob}")  # B x img_text_proj_features
-        text_loss = self.loss_fn(text_contrastive_prob, target)
-        # print(f"text_loss: {text_loss}")
+        text_img_loss = self.loss_fn(text_contrastive_prob, target)
+        # print(f"text_img_loss: {text_img_loss}")
 
         bos_embedding = self.text_transformer.text_token_embedding(
-            x=torch.tensor(self.bos_token, device=batch_img_tensor.device),
+            x=torch.tensor(self.bos_token, device=batch_aug_img_tensor1.device),
             skip_position_embedding=True,
         )
         lm_logits, lm_loss = self.img_caption_model(
-            img_feature=img_feature,
+            img_feature=img_feature1,
             text_feature=text_feature,
             text_mask=(batch_text_tensor != 0),
             batch_target_text_token=batch_text_tensor,
@@ -326,9 +350,11 @@ class ImgLanguageModel(nn.Module):
         # print(f"lm_loss: {lm_loss}")
 
         return (
-            img_loss,
-            text_loss,
-            img_contrastive_prob,
+            img_img_loss,
+            img_text_loss,
+            text_img_loss,
+            img_img_ontrastive_prob,
+            img_text_contrastive_prob,
             text_contrastive_prob,
             lm_loss,
             lm_logits,

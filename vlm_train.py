@@ -90,28 +90,37 @@ def create_dataloaders(config: Config, train_setting: TrainSetting):
 # model
 def create_model(config: Config, train_setting: TrainSetting):
     model = ImgLanguageModel(config=config)
-    batch_img_tensor, batch_img_id_tensor, batch_comment_encoding, batch_text_mask = (
-        next(iter(train_setting.train_dataloader))
-    )
-    print(f"batch_img_tensor: {batch_img_tensor.size()}")
+    (
+        batch_aug_img_tensor1,
+        batch_aug_img_tensor2,
+        batch_img_id_tensor,
+        batch_comment_encoding,
+        batch_text_mask,
+    ) = next(iter(train_setting.train_dataloader))
+    print(f"batch_aug_img_tensor1: {batch_aug_img_tensor1.size()}")
+    print(f"batch_aug_img_tensor2: {batch_aug_img_tensor2.size()}")
     print(f"batch_img_id_tensor: {batch_img_id_tensor.size()}")
     print(f"batch_comment_encoding: {batch_comment_encoding.size()}")
     print(f"batch_text_mask: {batch_text_mask.size()}")
     (
-        img_loss,
-        text_loss,
-        img_contrastive_prob,
-        text_contrastive_prob,
+        img_img_loss,
+        img_text_loss,
+        text_img_loss,
+        img_img_contrastive_prob,
+        img_text_contrastive_prob,
+        text_img_contrastive_prob,
         lm_loss,
         lm_logit,
     ) = model(
-        batch_img_tensor=batch_img_tensor,
+        batch_aug_img_tensor1=batch_aug_img_tensor1,
+        batch_aug_img_tensor2=batch_aug_img_tensor2,
         batch_text_tensor=batch_comment_encoding,
         batch_text_mask_tensor=batch_text_mask,
         batch_img_id_tensor=batch_img_id_tensor,
     )
-    print(f"img_loss: {img_loss}")
-    print(f"text_loss: {text_loss}")
+    print(f"img_img_loss: {img_img_loss}")
+    print(f"img_text_loss: {img_text_loss}")
+    print(f"text_img_loss: {text_img_loss}")
     print(f"lm_loss: {lm_loss}")
 
     pytorch_total_params = sum(p.numel() for p in model.parameters())
@@ -147,72 +156,89 @@ def eval(
                 break
 
             (
-                batch_img_tensor,
-                batch_img_id_tensor,
-                batch_target_tensor,
-                batch_target_mask,
-            ) = data
-            (
-                batch_img_tensor,
+                batch_aug_img_tensor1,
+                batch_aug_img_tensor2,
                 batch_img_id_tensor,
                 batch_text_tensor,
                 batch_text_mask_tensor,
             ) = data
-            batch_img_tensor = batch_img_tensor.to(train_setting.device)
+            batch_aug_img_tensor1 = batch_aug_img_tensor1.to(train_setting.device)
+            batch_aug_img_tensor2 = batch_aug_img_tensor2.to(train_setting.device)
             batch_img_id_tensor = batch_img_id_tensor.to(train_setting.device)
             batch_text_tensor = batch_text_tensor.to(train_setting.device)
             batch_text_mask_tensor = batch_text_mask_tensor.to(train_setting.device)
 
             (
-                img_loss,
-                text_loss,
-                img_contrastive_prob,
-                text_contrastive_prob,
+                img_img_loss,
+                img_text_loss,
+                text_img_loss,
+                img_img_contrastive_prob,
+                img_text_contrastive_prob,
+                text_img_contrastive_prob,
                 lm_loss,
                 lm_logit,
             ) = model(
-                batch_img_tensor=batch_img_tensor,
+                batch_aug_img_tensor1=batch_aug_img_tensor1,
+                batch_aug_img_tensor2=batch_aug_img_tensor2,
                 batch_text_tensor=batch_text_tensor,
                 batch_text_mask_tensor=batch_text_mask_tensor,
                 batch_img_id_tensor=batch_img_id_tensor,
             )
 
-            img_pred = torch.argmax(img_contrastive_prob, dim=1).cpu()
+            img_pred = torch.argmax(img_text_contrastive_prob, dim=1).cpu()
             label_mask = torch.arange(img_pred.size()[0]).cpu()
             img_accuracy = img_pred == label_mask
             img_accuracies.extend(img_accuracy)
 
-            text_pred = torch.argmax(text_contrastive_prob, dim=1).cpu()
+            text_pred = torch.argmax(text_img_contrastive_prob, dim=1).cpu()
             text_accuracy = text_pred == label_mask
             text_accuracies.extend(text_accuracy)
 
             # Loss
-            writer.add_scalar("eval/Img Loss", img_loss, global_step)
-            writer.add_scalar("eval/Text Loss", text_loss, global_step)
+            writer.add_scalar("eval/Img-Img Loss", img_img_loss, global_step)
+            writer.add_scalar("eval/Img-Text Loss", img_text_loss, global_step)
+            writer.add_scalar("eval/Text-Img Loss", text_img_loss, global_step)
             writer.add_scalar("eval/LM Loss", lm_loss, global_step)
-            eval_losses.append(img_loss + text_loss + lm_loss)
+            eval_loss = img_img_loss + img_text_loss + text_img_loss + lm_loss
+            eval_losses.append(eval_loss)
+            writer.add_scalar(
+                "eval/Loss",
+                eval_loss,
+                global_step,
+            )
 
             # Weighted Loss
-            weighted_img_loss = config.img_loss_weight * img_loss
+            weighted_img_img_loss = config.img_img_loss_weight * img_img_loss
             writer.add_scalar(
-                "weighted eval/Img Loss Weight",
-                config.img_loss_weight,
+                "weighted eval/Img-Img Loss Weight",
+                config.img_img_loss_weight,
                 global_step,
             )
             writer.add_scalar(
-                "weighted eval/Img Loss",
-                weighted_img_loss,
+                "weighted eval/Img-Img Loss",
+                weighted_img_img_loss,
                 global_step,
             )
-            weighted_text_loss = config.text_loss_weight * text_loss
+            weighted_img_text_loss = config.img_text_loss_weight * img_text_loss
             writer.add_scalar(
-                "weighted eval/Text Loss Weight",
-                config.text_loss_weight,
+                "weighted eval/Img-Text Loss Weight",
+                config.img_text_loss_weight,
                 global_step,
             )
             writer.add_scalar(
-                "weighted eval/Text Loss",
-                weighted_text_loss,
+                "weighted eval/Img-Text Loss",
+                weighted_img_text_loss,
+                global_step,
+            )
+            weighted_text_img_loss = config.text_img_loss_weight * text_img_loss
+            writer.add_scalar(
+                "weighted eval/Text-Img Loss Weight",
+                config.text_img_loss_weight,
+                global_step,
+            )
+            writer.add_scalar(
+                "weighted eval/Text-Img Loss",
+                weighted_text_img_loss,
                 global_step,
             )
             weighted_lm_loss = config.lm_loss_weight * lm_loss
@@ -226,14 +252,18 @@ def eval(
                 weighted_lm_loss,
                 global_step,
             )
+            weighted_eval_loss = (
+                weighted_img_img_loss
+                + weighted_img_text_loss
+                + weighted_text_img_loss
+                + weighted_lm_loss
+            )
             writer.add_scalar(
                 "weighted eval/Loss",
-                weighted_img_loss + weighted_text_loss + weighted_lm_loss,
+                weighted_eval_loss,
                 global_step,
             )
-            weighted_eval_losses.append(
-                weighted_img_loss + weighted_text_loss + weighted_lm_loss
-            )
+            weighted_eval_losses.append(weighted_eval_loss)
 
         # Agg Loss
         eval_losses = torch.tensor(eval_losses)
@@ -314,12 +344,14 @@ def train(
                     prof.step()
 
                 (
-                    batch_img_tensor,
+                    batch_aug_img_tensor1,
+                    batch_aug_img_tensor2,
                     batch_img_id_tensor,
                     batch_text_tensor,
                     batch_text_mask_tensor,
                 ) = data
-                batch_img_tensor = batch_img_tensor.to(train_setting.device)
+                batch_aug_img_tensor1 = batch_aug_img_tensor1.to(train_setting.device)
+                batch_aug_img_tensor2 = batch_aug_img_tensor2.to(train_setting.device)
                 batch_img_id_tensor = batch_img_id_tensor.to(train_setting.device)
                 batch_text_tensor = batch_text_tensor.to(train_setting.device)
                 batch_text_mask_tensor = batch_text_mask_tensor.to(train_setting.device)
@@ -329,48 +361,65 @@ def train(
                 #     writer.add_graph(model, (batch_img_tensor, batch_target_tensor))
 
                 (
-                    img_loss,
-                    text_loss,
-                    img_contrastive_prob,
-                    text_contrastive_prob,
+                    img_img_loss,
+                    img_text_loss,
+                    text_img_loss,
+                    img_img_contrastive_prob,
+                    img_text_contrastive_prob,
+                    text_img_contrastive_prob,
                     lm_loss,
                     lm_logit,
                 ) = model(
-                    batch_img_tensor=batch_img_tensor,
+                    batch_aug_img_tensor1=batch_aug_img_tensor1,
+                    batch_aug_img_tensor2=batch_aug_img_tensor2,
                     batch_text_tensor=batch_text_tensor,
                     batch_text_mask_tensor=batch_text_mask_tensor,
                     batch_img_id_tensor=batch_img_id_tensor,
                 )
 
                 # Loss
-                writer.add_scalar("train/Img Loss", img_loss, global_step)
-                writer.add_scalar("train/Text Loss", text_loss, global_step)
+                writer.add_scalar("train/Img-Img Loss", img_img_loss, global_step)
+                writer.add_scalar("train/Img-Text Loss", img_text_loss, global_step)
+                writer.add_scalar("train/Text-Img Loss", text_img_loss, global_step)
                 writer.add_scalar("train/LM Loss", lm_loss, global_step)
                 writer.add_scalar(
-                    "train/Loss", img_loss + text_loss + lm_loss, global_step
+                    "train/Loss",
+                    img_img_loss + img_text_loss + text_img_loss + lm_loss,
+                    global_step,
                 )
 
                 # Weighted Loss
-                weighted_img_loss = config.img_loss_weight * img_loss
+                weighted_img_img_loss = config.img_img_loss_weight * img_img_loss
                 writer.add_scalar(
-                    "weighted train/Img Loss Weight",
-                    config.img_loss_weight,
+                    "weighted train/Img-Img Loss Weight",
+                    config.img_img_loss_weight,
                     global_step,
                 )
                 writer.add_scalar(
-                    "weighted train/Img Loss",
-                    weighted_img_loss,
+                    "weighted train/Img-Img Loss",
+                    weighted_img_img_loss,
                     global_step,
                 )
-                weighted_text_loss = config.text_loss_weight * text_loss
+                weighted_img_text_loss = config.img_text_loss_weight * img_text_loss
                 writer.add_scalar(
-                    "weighted train/Text Loss Weight",
-                    config.text_loss_weight,
+                    "weighted train/Img-Text Loss Weight",
+                    config.img_text_loss_weight,
                     global_step,
                 )
                 writer.add_scalar(
-                    "weighted train/Text Loss",
-                    weighted_text_loss,
+                    "weighted train/Img-Text Loss",
+                    weighted_img_text_loss,
+                    global_step,
+                )
+                weighted_text_img_loss = config.text_img_loss_weight * text_img_loss
+                writer.add_scalar(
+                    "weighted train/Text-Img Loss Weight",
+                    config.text_img_loss_weight,
+                    global_step,
+                )
+                writer.add_scalar(
+                    "weighted train/Text-Img Loss",
+                    weighted_text_img_loss,
                     global_step,
                 )
                 weighted_lm_loss = config.lm_loss_weight * lm_loss
@@ -384,9 +433,16 @@ def train(
                     weighted_lm_loss,
                     global_step,
                 )
+
+                train_loss = (
+                    weighted_img_img_loss
+                    + weighted_img_text_loss
+                    + weighted_text_img_loss
+                    + weighted_lm_loss
+                )
                 writer.add_scalar(
                     "weighted train/Loss",
-                    weighted_img_loss + weighted_text_loss + weighted_lm_loss,
+                    train_loss,
                     global_step,
                 )
 
@@ -395,9 +451,7 @@ def train(
                     train_setting.scheduler.get_last_lr()[-1],
                     global_step,
                 )
-                loss = (
-                    weighted_img_loss + weighted_text_loss + weighted_lm_loss
-                ) / train_setting.gradient_agg_steps
+                loss = (train_loss) / train_setting.gradient_agg_steps
 
                 loss.backward()
 
@@ -422,7 +476,7 @@ def train(
                         train_setting.scheduler.step()
 
                 # Performance
-                img_pred = torch.argmax(img_contrastive_prob, dim=1).cpu()
+                img_pred = torch.argmax(img_text_contrastive_prob, dim=1).cpu()
                 label_mask = torch.arange(img_pred.size()[0]).cpu()
                 img_accuracy = img_pred == label_mask
                 img_accuracy = img_accuracy.float().mean()
@@ -431,7 +485,7 @@ def train(
                     + (1 - train_setting.train_accuracy_momentum) * img_accuracy
                 )
 
-                text_pred = torch.argmax(text_contrastive_prob, dim=1).cpu()
+                text_pred = torch.argmax(text_img_contrastive_prob, dim=1).cpu()
                 text_accuracy = text_pred == label_mask
                 text_accuracy = text_accuracy.float().mean()
                 running_text_accuracy = (

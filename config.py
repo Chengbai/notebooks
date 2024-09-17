@@ -15,20 +15,20 @@ class Config:
     img_h_size = img_patch_size * 14  # 224
 
     img_patches = (img_w_size // img_patch_size) * (img_h_size // img_patch_size)
-    img_patch_embedding = 728
+    img_patch_embedding = 512
 
     # Img Transform
     img_hidden = 1024
     img_transformer_heads = 8
     img_dropout = 0.0
-    img_transformer_blocks = 14
+    img_transformer_blocks = 12
 
     # Text
     text_tiktokenizer = "o200k_base"
     max_text_len = 50
-    text_token_embedding = 728
+    text_token_embedding = 512
     text_transformer_heads = 8
-    text_transformer_blocks = 14
+    text_transformer_blocks = 12
     text_dropout = 0.0
 
     # Construstrive Learning
@@ -45,6 +45,7 @@ class Config:
     )
 
     # loss
-    img_loss_weight = 3.0
-    text_loss_weight = 3.0
+    img_img_loss_weight = 2.0
+    img_text_loss_weight = 2.0
+    text_img_loss_weight = 2.0
     lm_loss_weight = 1.0
