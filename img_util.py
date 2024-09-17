@@ -39,7 +39,7 @@ def load_img_tensor(config: Config, img_file_path: Path) -> torch.tensor:
                 antialias=True,
             ),
             v2.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5.0)),
-            v2.ColorJitter(brightness=0.5, hue=0.3),
+            # v2.ColorJitter(brightness=0.5, hue=0.3),
             v2.RandomHorizontalFlip(p=0.5),
             v2.ToDtype(torch.float32, scale=True),  # Normalize expects float input
             v2.Normalize(

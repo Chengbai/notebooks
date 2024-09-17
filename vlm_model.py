@@ -146,9 +146,21 @@ class ImgLanguageModel(nn.Module):
         self.img_embedding = ImageEmbedding(config=config)
         self.img_transfomer = ImgTransformer(config=config)
         self.img_flatten = nn.Flatten(start_dim=1)
-        self.img_proj = nn.Linear(
+        # IMG Feature Prj MLP
+        self.img_linear1 = nn.Linear(
             in_features=config.img_patch_embedding,
-            out_features=config.img_text_proj_features,
+            out_features=config.img_text_proj_features_layer1,
+        )
+        self.img_linear2 = nn.Linear(
+            in_features=config.img_text_proj_features_layer1,
+            out_features=config.img_text_proj_features_layer2,
+        )
+        self.img_proj = nn.Sequential(
+            self.img_linear1,
+            nn.GELU(),
+            self.img_linear2,
+            nn.LayerNorm(config.img_text_proj_features_layer2),
+            nn.Dropout(config.img_text_proj_dropout),
         )
         self.img_softmax = nn.LogSoftmax(dim=-1)
         self.img_norm = nn.LayerNorm(config.img_patch_embedding)
@@ -158,13 +170,26 @@ class ImgLanguageModel(nn.Module):
         self.text_transformer = TextMaskedTransformer(config=config)
         self.text_flatten = nn.Flatten(start_dim=1)
         self.text_norm = nn.LayerNorm(config.text_token_embedding)
-        self.text_proj = nn.Linear(
+
+        # Text Feature Prj MLP
+        self.text_linear1 = nn.Linear(
             in_features=config.text_token_embedding,
-            out_features=config.img_text_proj_features,
+            out_features=config.img_text_proj_features_layer1,
+        )
+        self.text_linear2 = nn.Linear(
+            in_features=config.img_text_proj_features_layer1,
+            out_features=config.img_text_proj_features_layer2,
+        )
+        self.text_proj = nn.Sequential(
+            self.text_linear1,
+            nn.GELU(),
+            self.text_linear2,
+            nn.LayerNorm(config.img_text_proj_features_layer2),
+            nn.Dropout(config.img_text_proj_dropout),
         )
         self.text_softmax = nn.LogSoftmax(dim=-1)
 
-        self.diag_mask = torch.diag(torch.ones(config.img_text_proj_features))
+        self.diag_mask = torch.diag(torch.ones(config.img_text_proj_features_layer2))
         self.loss_fn = nn.NLLLoss()
         self.bce_loss_fn = torch.nn.BCEWithLogitsLoss()
 
@@ -181,13 +206,15 @@ class ImgLanguageModel(nn.Module):
         self.initialize_parameters()
 
     def initialize_parameters(self):
-        img_std = self.img_proj.in_features**-0.5
-        nn.init.normal_(self.img_proj.weight, std=img_std)
-
+        nn.init.normal_(self.img_linear1.weight, std=self.img_linear1.in_features**-0.5)
+        nn.init.normal_(self.img_linear2.weight, std=self.img_linear2.in_features**-0.5)
+        nn.init.normal_(
+            self.text_linear1.weight, std=self.text_linear1.in_features**-0.5
+        )
+        nn.init.normal_(
+            self.text_linear2.weight, std=self.text_linear2.in_features**-0.5
+        )
         nn.init.normal_(self.img_token_weight, std=0.2)
-
-        text_std = self.text_proj.in_features**-0.5
-        nn.init.normal_(self.text_proj.weight, std=text_std)
 
     def forward(
         self,

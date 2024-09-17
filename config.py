@@ -32,7 +32,9 @@ class Config:
     text_dropout = 0.0
 
     # Construstrive Learning
-    img_text_proj_features = 1024
+    img_text_proj_features_layer1 = 512
+    img_text_proj_features_layer2 = 256
+    img_text_proj_dropout = 0.0
 
     # huggingface
     # Create access token via: https://huggingface.co/settings/tokens, and add it into the env variable `hf_access_token`

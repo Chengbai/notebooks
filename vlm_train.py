@@ -425,6 +425,7 @@ def train(
                 img_pred = torch.argmax(img_contrastive_prob, dim=1).cpu()
                 label_mask = torch.arange(img_pred.size()[0]).cpu()
                 img_accuracy = img_pred == label_mask
+                img_accuracy = img_accuracy.float().mean()
                 running_img_accuracy = (
                     train_setting.train_accuracy_momentum * running_img_accuracy
                     + (1 - train_setting.train_accuracy_momentum) * img_accuracy
@@ -432,18 +433,19 @@ def train(
 
                 text_pred = torch.argmax(text_contrastive_prob, dim=1).cpu()
                 text_accuracy = text_pred == label_mask
+                text_accuracy = text_accuracy.float().mean()
                 running_text_accuracy = (
-                    train_setting.train_accuracy_momentum * running_img_accuracy
+                    train_setting.train_accuracy_momentum * running_text_accuracy
                     + (1 - train_setting.train_accuracy_momentum) * text_accuracy
                 )
                 writer.add_scalar(
                     "perf/Train Img Accuracy",
-                    sum(running_img_accuracy) / len(running_img_accuracy),
+                    running_img_accuracy,
                     global_step,
                 )
                 writer.add_scalar(
                     "perf/Train Text Accuracy",
-                    sum(running_text_accuracy) / len(running_text_accuracy),
+                    running_text_accuracy,
                     global_step,
                 )
 
