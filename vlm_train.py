@@ -6,7 +6,7 @@ from config import Config
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from fliker_comment_tokenizer import FlikerCommentTokenizer
-from fliker_img_comment_dataset import ImgCommentDataset
+from img_comment_dataset import ImgCommentDataset
 from img_embedding import ImageEmbedding
 from img_transformer import ImgTransformer
 from img_util import show_img_tensor_CHW

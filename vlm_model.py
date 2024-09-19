@@ -9,7 +9,7 @@ from img_transformer import ImgTransformer
 from img_util import show_img_tensor_CHW
 from loss import constrastive_logit_loss
 from fliker_comment_tokenizer import FlikerCommentTokenizer
-from fliker_img_comment_dataset import ImgCommentDataset
+from img_comment_dataset import ImgCommentDataset
 from model_util import count_parameters
 from pathlib import Path
 from text_token_embedding import TextTokenEmbedding
@@ -271,11 +271,11 @@ class ImgLanguageModel(nn.Module):
             _get_batch_img_feature(batch_aug_img_tensor=batch_aug_img_tensor2)
         )
         img_img_contrastive_scores = img_feature_proj1 @ img_feature_proj2.T
-        img_img_ontrastive_prob = self.img_softmax(img_img_contrastive_scores)
+        img_img_contrastive_prob = self.img_softmax(img_img_contrastive_scores)
         target = torch.arange(
-            img_img_ontrastive_prob.size()[0], device=img_img_ontrastive_prob.device
+            img_img_contrastive_prob.size()[0], device=img_img_contrastive_prob.device
         )
-        img_img_loss = self.loss_fn(img_img_ontrastive_prob, target)
+        img_img_loss = self.loss_fn(img_img_contrastive_prob, target)
 
         # text_embedding = self.text_embedding(batch_text_tensor)
         # print(f"text_embedding: {text_embedding.size()}")
@@ -353,7 +353,7 @@ class ImgLanguageModel(nn.Module):
             img_img_loss,
             img_text_loss,
             text_img_loss,
-            img_img_ontrastive_prob,
+            img_img_contrastive_prob,
             img_text_contrastive_prob,
             text_contrastive_prob,
             lm_loss,

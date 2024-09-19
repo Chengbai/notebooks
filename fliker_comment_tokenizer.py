@@ -17,7 +17,7 @@ class FlikerCommentTokenizer:
 
     @staticmethod
     def train_tokenizer(config: Config):
-        from fliker_img_comment_dataset import ImgCommentDataset
+        from img_comment_dataset import ImgCommentDataset
 
         def _batch_iterator(comments, batch_size=1000):
             for i in tqdm(range(0, len(comments), batch_size)):

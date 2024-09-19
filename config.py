@@ -6,7 +6,8 @@ from pathlib import Path
 @dataclass
 class Config:
     # fliker 30k img comment file path
-    img_comments_folder = Path("/Users/chengbai/ml/dataset/flickr30k_images/")
+    fliker_img_comments_folder = Path("/Users/chengbai/ml/dataset/flickr30k_images/")
+    coco_img_comments_folder = Path("/Users/chengbai/ml/dataset/coco/")
 
     # Image
     img_patch_size = 16
