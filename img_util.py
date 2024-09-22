@@ -62,5 +62,13 @@ def load_img_tensor(config: Config, img_file_path: Path) -> torch.tensor:
     return img_aug_tensor1, img_aug_tensor2
 
 
+def inverse_img_aug(img: torch.tensor) -> torch.tensor:
+    img = img.cpu().permute(1, 2, 0)
+    img = img * torch.tensor([0.26862954, 0.26130258, 0.27577711])
+    img = img + torch.tensor([0.48145466, 0.4578275, 0.40821073])
+    # plt.imshow(test_img)
+    return img.permute(2, 0, 1)
+
+
 def show_img_tensor_CHW(img_tensor: torch.tensor):
     plt.imshow(img_tensor.permute(1, 2, 0))  # C x H x W => H x W x C
