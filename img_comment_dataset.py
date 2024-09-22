@@ -10,6 +10,7 @@ from img_util import load_img_tensor
 from pathlib import Path
 from tqdm import tqdm
 from dataclasses import dataclass, asdict
+from text_util import normalize_comment
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -113,34 +114,11 @@ class ImgCommentDataset(Dataset):
                     config=self.config
                 )
             comment_tokens = self.text_tokenizer.encode(comment)
-            if len(comment_tokens) > self.config.max_text_len:
-                comment_tokens = comment_tokens[: self.config.max_text_len]
-                comment_mask = torch.tensor(
-                    [1] * self.config.max_text_len, dtype=torch.int8
-                )
-            else:
-                comment_mask = torch.concat(
-                    [
-                        torch.arange(
-                            start=1,
-                            end=len(comment_tokens) + 1,
-                            step=1,
-                            dtype=torch.int8,
-                        ),
-                        torch.tensor(
-                            [0] * (self.config.max_text_len - len(comment_tokens)),
-                            dtype=torch.int8,
-                        ),
-                    ]
-                )
 
-                # TODO: review append `<pad>` - 0 logic
-                comment_tokens = comment_tokens + [
-                    0 for _ in range(self.config.max_text_len - len(comment_tokens))
-                ]
-
+            comment_tokens, comment_mask = normalize_comment(
+                config=self.config, comment_tokens=comment_tokens
+            )
             assert len(comment_tokens) == self.config.max_text_len
-            comment_tokens = torch.tensor(comment_tokens, dtype=torch.long)
 
             # return load_img_tensor(image_name), comment_number, comment, comment_tokens
             img_aug_tensor1, img_aug_tensor2 = load_img_tensor(self.config, image_name)

@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from caption_util import plot_caption_pred
 from config import Config
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -290,6 +291,24 @@ def eval(
             sum(text_accuracies) / len(text_accuracies),
             global_step,
         )
+
+        # Caption
+        img_file_paths = [
+            "/Users/chengbai/ml/dataset/coco/train2017/000000233075.jpg",
+            "/Users/chengbai/ml/dataset/coco/train2017/000000233111.jpg",
+            "/Users/chengbai/ml/dataset/coco/train2017/000000348935.jpg",
+            "/Users/chengbai/ml/dataset/flickr30k_images/flickr30k_images/3273585735.jpg",
+            "/Users/chengbai/ml/dataset/flickr30k_images/flickr30k_images/428501119.jpg",
+            "/Users/chengbai/ml/dataset/flickr30k_images/flickr30k_images/4282367460.jpg",
+        ]
+
+        fig = plot_caption_pred(
+            img_langualge_model=model,
+            img_file_paths=img_file_paths,
+            device=train_setting.device,
+        )
+
+        writer.add_figure("Caption prediction", fig, global_step=global_step)
 
     model.train()
     writer.flush()

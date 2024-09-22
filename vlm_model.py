@@ -101,6 +101,7 @@ class ImgCaptionModel(nn.Module):
         x = self.lm_head(x)  # B x [IMG_PATCHES + 1 + TEXT_TOKEN] x vocab_size
 
         if batch_target_text_token is None:
+            assert False, "should never be here"
             loss = None
         else:
             # extract the last `self.config.max_text_len` token positions
@@ -110,9 +111,10 @@ class ImgCaptionModel(nn.Module):
             B, TEXT_TOKEN, vocab_size = batch_text_logits.size()
 
             ############################################################################
-            target_text_tokens = torch.argmax(
+            target_text_tokens, target_text_index = torch.max(
                 target_text_mask_tensor, dim=1, keepdim=False
             )
+            # print(f"target_text_tokens: {target_text_tokens}")
             batch_text_loss = torch.tensor(0.0, device=batch_target_text_token.device)
             for bi, token in zip(
                 torch.arange(B, device=batch_target_text_token.device),
@@ -217,6 +219,36 @@ class ImgLanguageModel(nn.Module):
         )
         nn.init.normal_(self.img_token_weight, std=0.2)
 
+    def get_batch_img_feature(
+        self,
+        batch_aug_img_tensor: torch.tensor,
+    ) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+        img_embedding = self.img_embedding(
+            batch_aug_img_tensor
+        )  # B x IMG_PATCHES x IMG_EMB
+        # print(f"img_encoding: {img_embedding.size()}")
+
+        img_feature = self.img_transfomer(img_embedding)  # B x IMG_PATCHES x IMG_EMB
+        img_feature = self.img_norm(img_feature)  # B x IMG_PATCHES x IMG_EMB
+        img_contrastive_feature = self.img_norm(
+            img_feature[:, -1, :]
+        )  # B x IMG_EMB, take the last one
+        # img_contrastive_feature = self.img_norm(
+        #     torch.einsum(
+        #         "bnf,n->bf",
+        #         img_feature,
+        #         self.img_token_weight.to(batch_img_tensor.device),
+        #     )
+        # )  # B x IMG_EMB
+        # print(f"img_feature: {img_feature.size()}")
+
+        # img_feature_flatten = self.img_flatten(img_feature)
+        # print(f"img_feature_flatten: {img_feature_flatten.size()}")
+
+        img_feature_proj = self.img_proj(img_contrastive_feature)
+        # print(f"img_feature_proj: {img_feature_proj.size()}")  # B x img_text_proj_features
+        return img_feature, img_contrastive_feature, img_feature_proj
+
     def forward(
         self,
         batch_aug_img_tensor1: torch.tensor,
@@ -232,43 +264,12 @@ class ImgLanguageModel(nn.Module):
         batch_text_mask_tensor: B x TEXT_TOKEN
         """
 
-        def _get_batch_img_feature(
-            batch_aug_img_tensor: torch.tensor,
-        ) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
-            img_embedding = self.img_embedding(
-                batch_aug_img_tensor
-            )  # B x IMG_PATCHES x IMG_EMB
-            # print(f"img_encoding: {img_embedding.size()}")
-
-            img_feature = self.img_transfomer(
-                img_embedding
-            )  # B x IMG_PATCHES x IMG_EMB
-            img_feature = self.img_norm(img_feature)  # B x IMG_PATCHES x IMG_EMB
-            img_contrastive_feature = self.img_norm(
-                img_feature[:, -1, :]
-            )  # B x IMG_EMB, take the last one
-            # img_contrastive_feature = self.img_norm(
-            #     torch.einsum(
-            #         "bnf,n->bf",
-            #         img_feature,
-            #         self.img_token_weight.to(batch_img_tensor.device),
-            #     )
-            # )  # B x IMG_EMB
-            # print(f"img_feature: {img_feature.size()}")
-
-            # img_feature_flatten = self.img_flatten(img_feature)
-            # print(f"img_feature_flatten: {img_feature_flatten.size()}")
-
-            img_feature_proj = self.img_proj(img_contrastive_feature)
-            # print(f"img_feature_proj: {img_feature_proj.size()}")  # B x img_text_proj_features
-            return img_feature, img_contrastive_feature, img_feature_proj
-
         img_feature1, img_contrastive_feature1, img_feature_proj1 = (
-            _get_batch_img_feature(batch_aug_img_tensor=batch_aug_img_tensor1)
+            self.get_batch_img_feature(batch_aug_img_tensor=batch_aug_img_tensor1)
         )
 
         img_feature2, img_contrastive_feature2, img_feature_proj2 = (
-            _get_batch_img_feature(batch_aug_img_tensor=batch_aug_img_tensor2)
+            self.get_batch_img_feature(batch_aug_img_tensor=batch_aug_img_tensor2)
         )
         img_img_contrastive_scores = img_feature_proj1 @ img_feature_proj2.T
         img_img_contrastive_prob = self.img_softmax(img_img_contrastive_scores)
