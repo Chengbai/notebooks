@@ -7,9 +7,20 @@ from typing import List, Tuple
 def normalize_comment(
     config: Config, comment_tokens: List[int]
 ) -> Tuple[torch.tensor, torch.tensor]:
+    """
+    Input `comment_tokens` could vary length case by case.
+    After normalization, output:
+     - all the comment tokens will have same length as `config.max_text_len`
+     - a mask is return with pattern: [1, 2, ..., N, 0, 0, ...]. The `MAX value` is the lengh of the TRUE token length
+    """
     if len(comment_tokens) > config.max_text_len:
         comment_tokens = comment_tokens[: config.max_text_len]
-        comment_mask = torch.tensor([1] * config.max_text_len, dtype=torch.int8)
+        comment_mask = torch.arange(
+            start=1,
+            end=config.max_text_len + 1,
+            step=1,
+            dtype=torch.int8,
+        )
     else:
         comment_mask = torch.concat(
             [

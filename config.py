@@ -50,3 +50,7 @@ class Config:
     img_text_loss_weight = 2.0
     text_img_loss_weight = 2.0
     lm_loss_weight = 1.0
+
+    # rolling window cache recent features
+    rolling_cache_enabled = False
+    rolling_cache_size = 20

@@ -102,6 +102,8 @@ class ImgCommentDataset(Dataset):
             img_id = item[IMAGE_ID]
             comment_number = item[COMMENT_NUMBER]
             comment = str(item[COMMENT])
+            if not comment:
+                print(f"missing comment for image: {image_name}")
 
             # row_df = self.img_comments_df[idx : idx + 1]
             # image_name = str(list(row_df[IMAGE_NAME])[0])

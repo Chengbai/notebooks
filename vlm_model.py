@@ -100,43 +100,50 @@ class ImgCaptionModel(nn.Module):
         )  # B x [IMG_PATCHES + 1 + TEXT_TOKEN] x IMG_PATCH_EMB
         x = self.lm_head(x)  # B x [IMG_PATCHES + 1 + TEXT_TOKEN] x vocab_size
 
-        if batch_target_text_token is None:
-            assert False, "should never be here"
-            loss = None
-        else:
-            # extract the last `self.config.max_text_len` token positions
-            text_pos_mask = torch.arange(start=-self.config.max_text_len, end=0, step=1)
-            batch_text_logits = x[:, text_pos_mask, :]  # B x TEXT_TOKEN x vocab_size
+        # extract the last `[self.config.max_text_len - 1:-1]` token positions.
+        # `-1` here to align the position to `[IMG_PATCHES + 1]`. Predict current from 1-step before info
+        text_pos_mask = torch.arange(
+            start=-self.config.max_text_len - 1, end=-1, step=1
+        )
+        batch_text_logits = x[:, text_pos_mask, :]  # B x TEXT_TOKEN x vocab_size
 
-            B, TEXT_TOKEN, vocab_size = batch_text_logits.size()
+        B, TEXT_TOKEN, vocab_size = batch_text_logits.size()
 
-            ############################################################################
-            target_text_tokens, target_text_index = torch.max(
-                target_text_mask_tensor, dim=1, keepdim=False
+        ############################################################################
+        valid_target_text_token_length, valid_target_text_index = torch.max(
+            target_text_mask_tensor, dim=1, keepdim=False
+        )
+        # print(f"target_text_tokens: {target_text_tokens}")
+        batch_text_loss = torch.tensor(0.0, device=batch_target_text_token.device)
+        for bi, token_length in zip(
+            torch.arange(B, device=batch_target_text_token.device),
+            valid_target_text_token_length,
+        ):
+            if token_length == 0:
+                if self.training:
+                    print("Should ONLY be here during eval caption prediction")
+                # print(
+                #     f"target_text_mask_tensor: {target_text_mask_tensor}, valid_target_text_token_length: {valid_target_text_token_length}"
+                # )
+
+                continue
+            target_text_logits = batch_text_logits[bi][:token_length]
+            target_text_token = batch_target_text_token[bi][:token_length]
+            target_text_loss = F.cross_entropy(
+                target_text_logits, target_text_token, reduction="mean"
             )
-            # print(f"target_text_tokens: {target_text_tokens}")
-            batch_text_loss = torch.tensor(0.0, device=batch_target_text_token.device)
-            for bi, token in zip(
-                torch.arange(B, device=batch_target_text_token.device),
-                target_text_tokens,
-            ):
-                target_text_logits = batch_text_logits[bi][: token + 1]
-                target_text_token = batch_target_text_token[bi][: token + 1]
-                target_text_loss = F.cross_entropy(
-                    target_text_logits, target_text_token, reduction="mean"
-                )
-                batch_text_loss += target_text_loss
+            batch_text_loss += target_text_loss
 
-            batch_text_loss = batch_text_loss / torch.tensor(
-                B, device=batch_target_text_token.device
-            )
-            ############################################################################
+        batch_text_loss = batch_text_loss / torch.tensor(
+            B, device=batch_target_text_token.device
+        )
+        ############################################################################
 
-            # batch_text_logits = batch_text_logits.view(B * TEXT_TOKEN, -1)
-            # batch_target_text_token = batch_target_text_token.view(B * TEXT_TOKEN)
-            # batch_text_loss = F.cross_entropy(
-            #     batch_text_logits, batch_target_text_token, reduction="mean"
-            # )
+        # batch_text_logits = batch_text_logits.view(B * TEXT_TOKEN, -1)
+        # batch_target_text_token = batch_target_text_token.view(B * TEXT_TOKEN)
+        # batch_text_loss = F.cross_entropy(
+        #     batch_text_logits, batch_target_text_token, reduction="mean"
+        # )
 
         return batch_text_logits, batch_text_loss
 
@@ -206,6 +213,8 @@ class ImgLanguageModel(nn.Module):
             tokenizer=self.text_transformer.text_token_embedding.text_encoder,
         )
 
+        self.rolling_cache = {}
+
         self.initialize_parameters()
 
     def initialize_parameters(self):
@@ -263,7 +272,6 @@ class ImgLanguageModel(nn.Module):
         batch_text_tensor: B x TEXT_TOKEN
         batch_text_mask_tensor: B x TEXT_TOKEN
         """
-
         img_feature1, img_contrastive_feature1, img_feature_proj1 = (
             self.get_batch_img_feature(batch_aug_img_tensor=batch_aug_img_tensor1)
         )
@@ -271,7 +279,38 @@ class ImgLanguageModel(nn.Module):
         img_feature2, img_contrastive_feature2, img_feature_proj2 = (
             self.get_batch_img_feature(batch_aug_img_tensor=batch_aug_img_tensor2)
         )
-        img_img_contrastive_scores = img_feature_proj1 @ img_feature_proj2.T
+
+        cached_img_feature_proj1 = self.rolling_cache.get("img_feature_proj1", None)
+        cached_img_feature_proj2 = self.rolling_cache.get("img_feature_proj2", None)
+
+        if (
+            self.config.rolling_cache_enabled
+            and cached_img_feature_proj1 is not None
+            and cached_img_feature_proj2 is not None
+        ):
+            all_img_feature_proj1 = torch.vstack(
+                [
+                    img_feature_proj1,
+                    cached_img_feature_proj1.detach().to(
+                        device=batch_aug_img_tensor1.device
+                    ),
+                ],
+            )
+            all_img_feature_proj2 = torch.vstack(
+                [
+                    img_feature_proj2,
+                    cached_img_feature_proj2.detach().to(
+                        device=batch_aug_img_tensor2.device
+                    ),
+                ],
+            )
+        else:
+            all_img_feature_proj1 = img_feature_proj1
+            all_img_feature_proj2 = img_feature_proj2
+
+        img_img_contrastive_scores = (
+            all_img_feature_proj1 @ all_img_feature_proj2.T
+        )  # (B+CACHE) x IMG_PRJ @ IMG_PRJ x (B+CACHE) => (B+CACHE) x (B+CACHE)
         img_img_contrastive_prob = self.img_softmax(img_img_contrastive_scores)
         target = torch.arange(
             img_img_contrastive_prob.size()[0], device=img_img_contrastive_prob.device
@@ -297,8 +336,24 @@ class ImgLanguageModel(nn.Module):
         text_feature_proj = self.text_proj(text_contrastive_feature)
         # print(f"text_feature_proj: {text_feature_proj.size()}")  # B x img_text_proj_features
 
+        cached_text_feature_proj = self.rolling_cache.get("text_feature_proj", None)
+        if self.config.rolling_cache_enabled and cached_text_feature_proj is not None:
+            assert cached_img_feature_proj1 is not None
+            assert cached_text_feature_proj.size() == cached_img_feature_proj1.size()
+
+            all_text_feature_proj = torch.vstack(
+                [
+                    text_feature_proj,
+                    cached_text_feature_proj.detach().to(
+                        device=batch_text_tensor.device
+                    ),
+                ],
+            )
+        else:
+            all_text_feature_proj = text_feature_proj
+
         # Contrastive learning
-        img_text_contrastive_scores = img_feature_proj1 @ text_feature_proj.T
+        img_text_contrastive_scores = all_img_feature_proj1 @ all_text_feature_proj.T
         # print(f"contractive_scores: {contrastive_scores}")  # B x img_text_proj_features
 
         # img_loss = constrastive_logit_loss(contrastive_scores)
@@ -339,6 +394,7 @@ class ImgLanguageModel(nn.Module):
             x=torch.tensor(self.bos_token, device=batch_aug_img_tensor1.device),
             skip_position_embedding=True,
         )
+
         lm_logits, lm_loss = self.img_caption_model(
             img_feature=img_feature1,
             text_feature=text_feature,
@@ -349,6 +405,25 @@ class ImgLanguageModel(nn.Module):
         )
         # print(f"lm_logits: {lm_logits.size()}")
         # print(f"lm_loss: {lm_loss}")
+
+        # Manage the cache
+        if self.config.rolling_cache_enabled:
+            all_img_feature_proj1 = all_img_feature_proj1[
+                : self.config.rolling_cache_size
+            ]
+            all_img_feature_proj2 = all_img_feature_proj2[
+                : self.config.rolling_cache_size
+            ]
+            all_text_feature_proj = all_text_feature_proj[
+                : self.config.rolling_cache_size
+            ]
+            self.rolling_cache["img_feature_proj1"] = all_img_feature_proj1
+            self.rolling_cache["img_feature_proj2"] = all_img_feature_proj2
+            self.rolling_cache["text_feature_proj"] = all_text_feature_proj
+
+        # print(
+        #     f'self.rolling_cache["text_feature_proj"]: {len(self.rolling_cache["text_feature_proj"])}, self.rolling_cache["img_feature_proj1"]: {len(self.rolling_cache["img_feature_proj1"])}, self.rolling_cache["img_feature_proj2"]: {len(self.rolling_cache["img_feature_proj2"])}'
+        # )
 
         return (
             img_img_loss,
