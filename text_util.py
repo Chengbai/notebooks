@@ -19,7 +19,7 @@ def normalize_comment(
             start=1,
             end=config.max_text_len + 1,
             step=1,
-            dtype=torch.int8,
+            dtype=torch.long,
         )
     else:
         comment_mask = torch.concat(
@@ -28,11 +28,11 @@ def normalize_comment(
                     start=1,
                     end=len(comment_tokens) + 1,
                     step=1,
-                    dtype=torch.int8,
+                    dtype=torch.long,
                 ),
                 torch.tensor(
                     [0] * (config.max_text_len - len(comment_tokens)),
-                    dtype=torch.int8,
+                    dtype=torch.long,
                 ),
             ]
         )

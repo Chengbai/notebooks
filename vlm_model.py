@@ -45,17 +45,19 @@ class ImgCaptionModel(nn.Module):
         # <image> | 1,  1,  1,  1,  1,  1 |
         # <image> | 1,  1,  1,  1,  1,  1 |
         # <bos>   | 1,  1,  1,  1,  1,  1 |
-        # t1      | 1,  1,  1,  0,  0,  0 |
-        # t2      | 1,  1,  1,  1,  0,  0 |
-        # t3      | 1,  1,  1,  1,  1,  0 |
+        # t1      | 1,  1,  1,  1,  0,  0 |
+        # t2      | 1,  1,  1,  1,  1,  0 |
+        # t3      | 1,  1,  1,  1,  1,  1 |
         self.img_bos_mask = torch.ones(
             size=(config.img_patches + 1, config.img_patches + 1 + config.max_text_len)
         )  # (IMG_PATCHES + 1) x (IMG_PATCHES + 1 + TEXT_TOKENS)
         self.text_mask = torch.hstack(
             [
                 torch.ones(size=(config.max_text_len, config.img_patches + 1)),
-                torch.tril(torch.ones(size=(config.max_text_len, config.max_text_len)))
-                - torch.eye(config.max_text_len),
+                torch.tril(
+                    torch.ones(size=(config.max_text_len, config.max_text_len)),
+                    diagonal=0,
+                ),
             ]
         )
         self.mask = torch.vstack([self.img_bos_mask, self.text_mask])
@@ -102,9 +104,7 @@ class ImgCaptionModel(nn.Module):
 
         # extract the last `[self.config.max_text_len - 1:-1]` token positions.
         # `-1` here to align the position to `[IMG_PATCHES + 1]`. Predict current from 1-step before info
-        text_pos_mask = torch.arange(
-            start=-self.config.max_text_len - 1, end=-1, step=1
-        )
+        text_pos_mask = torch.arange(start=-self.config.max_text_len, end=0, step=1)
         batch_text_logits = x[:, text_pos_mask, :]  # B x TEXT_TOKEN x vocab_size
 
         B, TEXT_TOKEN, vocab_size = batch_text_logits.size()
@@ -115,24 +115,18 @@ class ImgCaptionModel(nn.Module):
         )
         # print(f"target_text_tokens: {target_text_tokens}")
         batch_text_loss = torch.tensor(0.0, device=batch_target_text_token.device)
-        for bi, token_length in zip(
-            torch.arange(B, device=batch_target_text_token.device),
-            valid_target_text_token_length,
-        ):
-            if token_length == 0:
-                if self.training:
-                    print("Should ONLY be here during eval caption prediction")
-                # print(
-                #     f"target_text_mask_tensor: {target_text_mask_tensor}, valid_target_text_token_length: {valid_target_text_token_length}"
-                # )
-
-                continue
-            target_text_logits = batch_text_logits[bi][:token_length]
-            target_text_token = batch_target_text_token[bi][:token_length]
-            target_text_loss = F.cross_entropy(
-                target_text_logits, target_text_token, reduction="mean"
-            )
-            batch_text_loss += target_text_loss
+        if self.training:
+            for bi, token_length in zip(
+                torch.arange(B, device=batch_target_text_token.device),
+                valid_target_text_token_length,
+            ):
+                assert token_length > 0
+                target_text_logits = batch_text_logits[bi][:token_length]
+                target_text_token = batch_target_text_token[bi][:token_length]
+                target_text_loss = F.cross_entropy(
+                    target_text_logits, target_text_token, reduction="mean"
+                )
+                batch_text_loss += target_text_loss
 
         batch_text_loss = batch_text_loss / torch.tensor(
             B, device=batch_target_text_token.device

@@ -23,7 +23,25 @@ class TextMaskedMultiheadSelfAttention(nn.Module):
 
         # self.norm = nn.LayerNorm(config.text_token_embedding)
         if mask is None:
-            self.mask = torch.tril(torch.ones(config.max_text_len, config.max_text_len))
+            """
+            tensor([[1., 0., 0., 0.],
+                    [1., 1., 0., 0.],
+                    [1., 1., 1., 0.],
+                    [1., 1., 1., 1.]])
+            =>
+            tensor([[1., -inf, -inf, -inf],
+                    [1., 1., -inf, -inf],
+                    [1., 1., 1., -inf],
+                    [1., 1., 1., 1.]])
+            =>
+            tensor([[1.0000, 0.0000, 0.0000, 0.0000],
+                    [0.5000, 0.5000, 0.0000, 0.0000],
+                    [0.3333, 0.3333, 0.3333, 0.0000],
+                    [0.2500, 0.2500, 0.2500, 0.2500]])
+            """
+            self.mask = torch.tril(
+                torch.ones(config.max_text_len, config.max_text_len), diagonal=0
+            )
         else:
             self.mask = mask
         self.softmax = nn.Softmax(dim=-1)  # softmax accross the last dim
