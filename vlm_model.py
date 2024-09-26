@@ -104,7 +104,9 @@ class ImgCaptionModel(nn.Module):
 
         # extract the last `[self.config.max_text_len - 1:-1]` token positions.
         # `-1` here to align the position to `[IMG_PATCHES + 1]`. Predict current from 1-step before info
-        text_pos_mask = torch.arange(start=-self.config.max_text_len, end=0, step=1)
+        text_pos_mask = torch.arange(
+            start=-self.config.max_text_len - 1, end=-1, step=1
+        )
         batch_text_logits = x[:, text_pos_mask, :]  # B x TEXT_TOKEN x vocab_size
 
         B, TEXT_TOKEN, vocab_size = batch_text_logits.size()
@@ -282,20 +284,18 @@ class ImgLanguageModel(nn.Module):
             and cached_img_feature_proj1 is not None
             and cached_img_feature_proj2 is not None
         ):
+            assert cached_img_feature_proj1.size()[0] == self.config.rolling_cache_size
+            assert cached_img_feature_proj2.size()[0] == self.config.rolling_cache_size
             all_img_feature_proj1 = torch.vstack(
                 [
                     img_feature_proj1,
-                    cached_img_feature_proj1.detach().to(
-                        device=batch_aug_img_tensor1.device
-                    ),
+                    cached_img_feature_proj1.to(device=batch_aug_img_tensor1.device),
                 ],
             )
             all_img_feature_proj2 = torch.vstack(
                 [
                     img_feature_proj2,
-                    cached_img_feature_proj2.detach().to(
-                        device=batch_aug_img_tensor2.device
-                    ),
+                    cached_img_feature_proj2.to(device=batch_aug_img_tensor2.device),
                 ],
             )
         else:
@@ -338,9 +338,7 @@ class ImgLanguageModel(nn.Module):
             all_text_feature_proj = torch.vstack(
                 [
                     text_feature_proj,
-                    cached_text_feature_proj.detach().to(
-                        device=batch_text_tensor.device
-                    ),
+                    cached_text_feature_proj.to(device=batch_text_tensor.device),
                 ],
             )
         else:
@@ -402,15 +400,15 @@ class ImgLanguageModel(nn.Module):
 
         # Manage the cache
         if self.config.rolling_cache_enabled:
-            all_img_feature_proj1 = all_img_feature_proj1[
-                : self.config.rolling_cache_size
-            ]
-            all_img_feature_proj2 = all_img_feature_proj2[
-                : self.config.rolling_cache_size
-            ]
-            all_text_feature_proj = all_text_feature_proj[
-                : self.config.rolling_cache_size
-            ]
+            all_img_feature_proj1 = (
+                all_img_feature_proj1[: self.config.rolling_cache_size].clone().detach()
+            )
+            all_img_feature_proj2 = (
+                all_img_feature_proj2[: self.config.rolling_cache_size].clone().detach()
+            )
+            all_text_feature_proj = (
+                all_text_feature_proj[: self.config.rolling_cache_size].clone().detach()
+            )
             self.rolling_cache["img_feature_proj1"] = all_img_feature_proj1
             self.rolling_cache["img_feature_proj2"] = all_img_feature_proj2
             self.rolling_cache["text_feature_proj"] = all_text_feature_proj

@@ -19,6 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from typing import List, Tuple
 from vlm_model import ImgLanguageModel
+from train_settings import TrainSetting
 
 import torch
 import torch.nn as nn
@@ -26,30 +27,6 @@ import torch.nn.functional as F
 from torch.profiler import profile, record_function, ProfilerActivity
 from torch.utils.data import DataLoader
 import torchvision.transforms.functional as VF
-
-
-@dataclass
-class TrainSetting:
-    batch_size = 20
-    epoches = 5
-    eval_interval_steps = 100
-    eval_steps = 10
-    lr = 5e-4
-    max_l2_grad_norm = 2
-
-    train_dataloader: DataLoader = None
-    eval_dataloader: DataLoader = None
-    test_dataloader: DataLoader = None
-
-    optimizer = None
-    scheduler = None
-
-    gradient_agg_steps = 1
-
-    train_accuracy_momentum = 0.9
-    eval_accuracy_momentum = 0.9
-
-    device = torch.device("cpu")
 
 
 def create_dataloaders(config: Config, train_setting: TrainSetting):
@@ -69,13 +46,15 @@ def create_dataloaders(config: Config, train_setting: TrainSetting):
 
     # Data Loader
     train_dataloader = DataLoader(
-        train_dataset, batch_size=train_setting.batch_size, shuffle=True
+        train_dataset,
+        batch_size=train_setting.batch_size,
+        shuffle=True,
     )
     eval_dataloader = DataLoader(
-        eval_dataset, batch_size=train_setting.batch_size, shuffle=True
+        eval_dataset, batch_size=train_setting.batch_size, shuffle=True, num_workers=2
     )
     test_dataloader = DataLoader(
-        test_dataset, batch_size=train_setting.batch_size, shuffle=True
+        test_dataset, batch_size=train_setting.batch_size, shuffle=True, num_workers=1
     )
     print(f"train_dataloader:  {len(train_dataloader)}")
     print(f"eval_data_loader:  {len(eval_dataloader)}")
@@ -519,6 +498,18 @@ def train(
                 writer.add_scalar(
                     "perf/Train Text Accuracy",
                     running_text_accuracy,
+                    global_step,
+                )
+
+                writer.add_scalar(
+                    "cache/Rolling Cache Enabled",
+                    config.rolling_cache_enabled,
+                    global_step,
+                )
+
+                writer.add_scalar(
+                    "cache/Rolling Cache Size",
+                    config.rolling_cache_size,
                     global_step,
                 )
 
