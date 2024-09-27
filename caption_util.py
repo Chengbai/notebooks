@@ -127,7 +127,10 @@ def plot_caption_pred(
         multiline_caption = None
         MAX_LINE_LEN = 20
         for i in range(0, len(caption), MAX_LINE_LEN):
-            multiline_caption = f"{multiline_caption}{caption[i:i+MAX_LINE_LEN]}\n"
+            if multiline_caption is None:
+                multiline_caption = f"{caption[i:i+MAX_LINE_LEN]}\n"
+            else:
+                multiline_caption = f"{multiline_caption}{caption[i:i+MAX_LINE_LEN]}\n"
 
         ax.set_title(
             multiline_caption,

@@ -48,12 +48,16 @@ class ImgCaptionModel(nn.Module):
         # t1      | 1,  1,  1,  1,  0,  0 |
         # t2      | 1,  1,  1,  1,  1,  0 |
         # t3      | 1,  1,  1,  1,  1,  1 |
+        # ---------------------------------------------------------
+        # NOTE: <bos> token seems introduced confusing. Removed for now.
+        # ---------------------------------------------------------
+
         self.img_bos_mask = torch.ones(
-            size=(config.img_patches + 1, config.img_patches + 1 + config.max_text_len)
-        )  # (IMG_PATCHES + 1) x (IMG_PATCHES + 1 + TEXT_TOKENS)
+            size=(config.img_patches, config.img_patches + config.max_text_len)
+        )  # (IMG_PATCHES) x (IMG_PATCHES + TEXT_TOKENS)
         self.text_mask = torch.hstack(
             [
-                torch.ones(size=(config.max_text_len, config.img_patches + 1)),
+                torch.ones(size=(config.max_text_len, config.img_patches)),
                 torch.tril(
                     torch.ones(size=(config.max_text_len, config.max_text_len)),
                     diagonal=0,
@@ -95,7 +99,8 @@ class ImgCaptionModel(nn.Module):
         )
         bos_embedding_ext = bos_embedding.expand(img_feature.size()[0], -1, -1)
         x = torch.cat(
-            [img_feature, bos_embedding_ext, text_feature], dim=1
+            [img_feature, text_feature],
+            dim=1,
         )  # B x [IMG_PATCHES + 1 + TEXT_TOKEN] x IMG_PATCH_EMB
         x = self.transformer(
             x=x, need_embedding=False
@@ -117,18 +122,19 @@ class ImgCaptionModel(nn.Module):
         )
         # print(f"target_text_tokens: {target_text_tokens}")
         batch_text_loss = torch.tensor(0.0, device=batch_target_text_token.device)
-        if self.training:
-            for bi, token_length in zip(
-                torch.arange(B, device=batch_target_text_token.device),
-                valid_target_text_token_length,
-            ):
-                assert token_length > 0
-                target_text_logits = batch_text_logits[bi][:token_length]
-                target_text_token = batch_target_text_token[bi][:token_length]
-                target_text_loss = F.cross_entropy(
-                    target_text_logits, target_text_token, reduction="mean"
-                )
-                batch_text_loss += target_text_loss
+        for bi, token_length in zip(
+            torch.arange(B, device=batch_target_text_token.device),
+            valid_target_text_token_length,
+        ):
+            if token_length == 0:
+                # this is called at the beginning of create_caption_from_aug_img_tensor
+                continue
+            target_text_logits = batch_text_logits[bi][:token_length]
+            target_text_token = batch_target_text_token[bi][:token_length]
+            target_text_loss = F.cross_entropy(
+                target_text_logits, target_text_token, reduction="mean"
+            )
+            batch_text_loss += target_text_loss
 
         batch_text_loss = batch_text_loss / torch.tensor(
             B, device=batch_target_text_token.device
