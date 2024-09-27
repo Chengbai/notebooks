@@ -6,6 +6,7 @@ from fliker_comment_tokenizer import FlikerCommentTokenizer
 from image_comment_data_item import ImgCommentDataItem
 from fliker_data_source import load_fliker_data_items
 from coco_data_source import load_coco_data_items
+from visual_genome_data_source import load_visual_genome_data_items
 from img_util import load_img_tensor
 from pathlib import Path
 from tqdm import tqdm
@@ -43,7 +44,16 @@ class ImgCommentDataset(Dataset):
         coco_data_items: List[ImgCommentDataItem] = load_coco_data_items(config=config)
         print(f"Loaded {len(coco_data_items)} coco image-caption data items.")
 
-        total_data_items = fliker_data_items + coco_data_items
+        visaul_genome_data_items: List[ImgCommentDataItem] = (
+            load_visual_genome_data_items(config=config)
+        )
+        print(
+            f"Loaded {len(visaul_genome_data_items)} visual-genome image-caption data items."
+        )
+
+        total_data_items = (
+            fliker_data_items + coco_data_items + visaul_genome_data_items
+        )
         df = pd.DataFrame([data_item.to_json() for data_item in total_data_items])
 
         self.split = split

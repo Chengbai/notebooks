@@ -8,6 +8,9 @@ class Config:
     # fliker 30k img comment file path
     fliker_img_comments_folder = Path("/Users/chengbai/ml/dataset/flickr30k_images/")
     coco_img_comments_folder = Path("/Users/chengbai/ml/dataset/coco/")
+    visual_genome_img_comments_folder = Path(
+        "/Users/chengbai/ml/dataset/visual_genome/"
+    )
 
     # Image
     img_patch_size = 16

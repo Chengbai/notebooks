@@ -1,6 +1,7 @@
 import json
 
 from config import Config
+from common_util import load_json
 from dataclasses import dataclass
 from image_comment_data_item import ImgCommentDataItem
 from pathlib import Path
@@ -33,15 +34,6 @@ class CocoImgInfo:
     flickr_url: str
     id: int
     date_captured: str
-
-
-def load_json(json_file: str) -> Dict:
-    assert json_file
-    assert Path(json_file).exists()
-    with open(json_file, "r") as f:
-        json_data = json.load(f)
-
-    return json_data
 
 
 def load_coco_data_items(config: Config) -> List[ImgCommentDataItem]:

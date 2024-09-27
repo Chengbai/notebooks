@@ -19,3 +19,17 @@
     Wget http://images.cocodataset.org/annotations/panoptic_annotations_trainval2017.zip
     Wget http://images.cocodataset.org/annotations/image_info_test2017.zip
     Wget http://images.cocodataset.org/annotations/image_info_unlabeled2017.zip
+
+
+- Visual Genome
+   https://homes.cs.washington.edu/~ranjay/visualgenome/api.html
+   - v1.2 image Part1: Wget https://cs.stanford.edu/people/rak248/VG_100K_2/images.zip
+   - v1.2 image Part2: Wget https://cs.stanford.edu/people/rak248/VG_100K_2/images2.zip
+
+   Caption
+   - Wget https://storage.googleapis.com/sfr-pcl-data-research/ALBEF/json_pretrain.zip
+      - vg.json
+
+# ALBEF
+ - https://github.com/salesforce/ALBEF?tab=readme-ov-file
+
