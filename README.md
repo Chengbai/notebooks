@@ -33,3 +33,13 @@
 # ALBEF
  - https://github.com/salesforce/ALBEF?tab=readme-ov-file
 
+# Traing
+ - start a new training
+ ```
+ python vlm_train.py
+ ```
+
+ - continue training from a given checkpoint
+ ```
+ python vlm_train.py --checkpoint /Users/chengbai/ml/cheng_git/notebooks/vlm_caption_model_0_20240927_073655_2500.pt
+ ```

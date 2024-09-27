@@ -1,5 +1,9 @@
 import torch
 
+
+from common_util import get_logger
+
+logger = get_logger(__name__)
 # img/text constrastive loss
 
 
@@ -31,7 +35,7 @@ def constrastive_logit_loss(contrastive_logit: torch.tensor) -> torch.tensor:
     target_exp_logits = logit_exp[torch.arange(N).unsqueeze(1), target.unsqueeze(1)]
     loss = -((target_exp_logits / (masked_logit_exp_agg + e)).sum() / N).log()
     if torch.isnan(loss):
-        print(
+        logger.info(
             f"nan loss: \ntarget_exp_logits: {target_exp_logits}\ncontrastive_logit: {contrastive_logit}\n contrastive_logit_table: {contrastive_logit_table}\n logit_exp: {logit_exp}"
         )
     return loss

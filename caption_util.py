@@ -4,12 +4,15 @@ import PIL
 import torch
 import torchvision.transforms.functional as VF
 
-from fliker_comment_tokenizer import FlikerCommentTokenizer
+from common_util import get_logger
 from config import Config
+from fliker_comment_tokenizer import FlikerCommentTokenizer
 from img_util import load_img_tensor, inverse_img_aug
 from text_util import normalize_comment
 from typing import List, Tuple
 from vlm_model import ImgLanguageModel
+
+logger = get_logger(__name__)
 
 
 # Create Caption
@@ -64,7 +67,7 @@ def create_caption_from_aug_img_tensor(
             target_text_mask_tensor=batch_text_mask_tensor,
             bos_embedding=bos_embedding,
         )
-        # print(f"lm_loss: {lm_loss}, normal_mask: {normal_mask}")
+        # logger.info(f"lm_loss: {lm_loss}, normal_mask: {normal_mask}")
         cur_token = torch.argmax(lm_logits[0][index])
         caption_tokens.append(cur_token)
         if (

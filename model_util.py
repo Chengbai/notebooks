@@ -1,4 +1,7 @@
+from common_util import get_logger
 from prettytable import PrettyTable
+
+logger = get_logger(__name__)
 
 
 def count_parameters(model):
@@ -10,6 +13,6 @@ def count_parameters(model):
         params = parameter.numel()
         table.add_row([name, params])
         total_params += params
-    print(table)
-    print(f"Total Trainable Params: {total_params}")
+    logger.info(table)
+    logger.info(f"Total Trainable Params: {total_params}")
     return total_params

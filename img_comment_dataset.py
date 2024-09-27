@@ -1,6 +1,7 @@
 import tiktoken
 import pandas as pd
 
+from common_util import get_logger
 from config import Config
 from fliker_comment_tokenizer import FlikerCommentTokenizer
 from image_comment_data_item import ImgCommentDataItem
@@ -26,6 +27,8 @@ TRAIN = "train"
 EVAL = "eval"
 TEST = "test"
 
+logger = get_logger(__name__)
+
 
 # Create Dataset
 class ImgCommentDataset(Dataset):
@@ -39,15 +42,15 @@ class ImgCommentDataset(Dataset):
         fliker_data_items: List[ImgCommentDataItem] = load_fliker_data_items(
             config=config
         )
-        print(f"Loaded {len(fliker_data_items)} fliker image-caption data items.")
+        logger.info(f"Loaded {len(fliker_data_items)} fliker image-caption data items.")
 
         coco_data_items: List[ImgCommentDataItem] = load_coco_data_items(config=config)
-        print(f"Loaded {len(coco_data_items)} coco image-caption data items.")
+        logger.info(f"Loaded {len(coco_data_items)} coco image-caption data items.")
 
         visaul_genome_data_items: List[ImgCommentDataItem] = (
             load_visual_genome_data_items(config=config)
         )
-        print(
+        logger.info(
             f"Loaded {len(visaul_genome_data_items)} visual-genome image-caption data items."
         )
 
@@ -93,7 +96,7 @@ class ImgCommentDataset(Dataset):
         return len(self.img_comments_df)
 
     def __getitem__(self, idx: int):
-        # print(f"idx: {idx}")
+        # logger.info(f"idx: {idx}")
         idx = idx % len(self.img_comments_df)
         # check cache first
         if (
@@ -113,7 +116,7 @@ class ImgCommentDataset(Dataset):
             comment_number = item[COMMENT_NUMBER]
             comment = str(item[COMMENT])
             if not comment:
-                print(f"missing comment for image: {image_name}")
+                logger.info(f"missing comment for image: {image_name}")
 
             # row_df = self.img_comments_df[idx : idx + 1]
             # image_name = str(list(row_df[IMAGE_NAME])[0])

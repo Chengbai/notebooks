@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from common_util import get_logger
 from config import Config
 from datetime import datetime
 from img_embedding import ImageEmbedding
@@ -24,6 +25,9 @@ import torch.nn.functional as F
 from torch.profiler import profile, record_function, ProfilerActivity
 from torch.utils.data import DataLoader
 import torchvision.transforms.functional as VF
+
+
+logger = get_logger(__name__)
 
 
 class ImgCaptionModel(nn.Module):
@@ -120,7 +124,7 @@ class ImgCaptionModel(nn.Module):
         valid_target_text_token_length, valid_target_text_index = torch.max(
             target_text_mask_tensor, dim=1, keepdim=False
         )
-        # print(f"target_text_tokens: {target_text_tokens}")
+        # logger.info(f"target_text_tokens: {target_text_tokens}")
         batch_text_loss = torch.tensor(0.0, device=batch_target_text_token.device)
         for bi, token_length in zip(
             torch.arange(B, device=batch_target_text_token.device),
@@ -237,7 +241,7 @@ class ImgLanguageModel(nn.Module):
         img_embedding = self.img_embedding(
             batch_aug_img_tensor
         )  # B x IMG_PATCHES x IMG_EMB
-        # print(f"img_encoding: {img_embedding.size()}")
+        # logger.info(f"img_encoding: {img_embedding.size()}")
 
         img_feature = self.img_transfomer(img_embedding)  # B x IMG_PATCHES x IMG_EMB
         img_feature = self.img_norm(img_feature)  # B x IMG_PATCHES x IMG_EMB
@@ -251,13 +255,13 @@ class ImgLanguageModel(nn.Module):
         #         self.img_token_weight.to(batch_img_tensor.device),
         #     )
         # )  # B x IMG_EMB
-        # print(f"img_feature: {img_feature.size()}")
+        # logger.info(f"img_feature: {img_feature.size()}")
 
         # img_feature_flatten = self.img_flatten(img_feature)
-        # print(f"img_feature_flatten: {img_feature_flatten.size()}")
+        # logger.info(f"img_feature_flatten: {img_feature_flatten.size()}")
 
         img_feature_proj = self.img_proj(img_contrastive_feature)
-        # print(f"img_feature_proj: {img_feature_proj.size()}")  # B x img_text_proj_features
+        # logger.info(f"img_feature_proj: {img_feature_proj.size()}")  # B x img_text_proj_features
         return img_feature, img_contrastive_feature, img_feature_proj
 
     def forward(
@@ -318,7 +322,7 @@ class ImgLanguageModel(nn.Module):
         img_img_loss = self.loss_fn(img_img_contrastive_prob, target)
 
         # text_embedding = self.text_embedding(batch_text_tensor)
-        # print(f"text_embedding: {text_embedding.size()}")
+        # logger.info(f"text_embedding: {text_embedding.size()}")
 
         text_feature = self.text_transformer(batch_text_tensor)
         text_feature = self.text_norm(text_feature)
@@ -328,13 +332,13 @@ class ImgLanguageModel(nn.Module):
                 torch.argmax(batch_text_mask_tensor, dim=1, keepdim=False),
             ]
         )
-        # print(f"text_feature: {text_feature.size()}")
+        # logger.info(f"text_feature: {text_feature.size()}")
 
         # text_feature_flatten = self.text_flatten(text_feature)
-        # print(f"text_feature_flatten: {text_feature_flatten.size()}")
+        # logger.info(f"text_feature_flatten: {text_feature_flatten.size()}")
 
         text_feature_proj = self.text_proj(text_contrastive_feature)
-        # print(f"text_feature_proj: {text_feature_proj.size()}")  # B x img_text_proj_features
+        # logger.info(f"text_feature_proj: {text_feature_proj.size()}")  # B x img_text_proj_features
 
         cached_text_feature_proj = self.rolling_cache.get("text_feature_proj", None)
         if self.config.rolling_cache_enabled and cached_text_feature_proj is not None:
@@ -352,13 +356,13 @@ class ImgLanguageModel(nn.Module):
 
         # Contrastive learning
         img_text_contrastive_scores = all_img_feature_proj1 @ all_text_feature_proj.T
-        # print(f"contractive_scores: {contrastive_scores}")  # B x img_text_proj_features
+        # logger.info(f"contractive_scores: {contrastive_scores}")  # B x img_text_proj_features
 
         # img_loss = constrastive_logit_loss(contrastive_scores)
         # text_loss = constrastive_logit_loss(contrastive_scores.T)
 
         img_text_contrastive_prob = self.img_softmax(img_text_contrastive_scores)
-        # print(f"img_contrastive_prob: {img_contrastive_prob}")  # B x img_text_proj_features
+        # logger.info(f"img_contrastive_prob: {img_contrastive_prob}")  # B x img_text_proj_features
 
         # ===============================================================================
         # Img BCE-Loss
@@ -377,16 +381,16 @@ class ImgLanguageModel(nn.Module):
         )
         img_text_loss = self.loss_fn(img_text_contrastive_prob, target)
         # img_loss = self.loss_fn(img_contrastive_prob, self.target.expand(img_contrastive_prob.size()[0], -1))
-        # print(f"img_loss: {img_loss}")
+        # logger.info(f"img_loss: {img_loss}")
 
         text_contrastive_prob = self.text_softmax(img_text_contrastive_scores.T)
 
         # ===============================================================================
         # Text NLL-Loss
         # ===============================================================================
-        # print(f"text_contrastive_prob: {text_contrastive_prob}")  # B x img_text_proj_features
+        # logger.info(f"text_contrastive_prob: {text_contrastive_prob}")  # B x img_text_proj_features
         text_img_loss = self.loss_fn(text_contrastive_prob, target)
-        # print(f"text_img_loss: {text_img_loss}")
+        # logger.info(f"text_img_loss: {text_img_loss}")
 
         bos_embedding = self.text_transformer.text_token_embedding(
             x=torch.tensor(self.bos_token, device=batch_aug_img_tensor1.device),
@@ -401,8 +405,8 @@ class ImgLanguageModel(nn.Module):
             target_text_mask_tensor=batch_text_mask_tensor,
             bos_embedding=bos_embedding,
         )
-        # print(f"lm_logits: {lm_logits.size()}")
-        # print(f"lm_loss: {lm_loss}")
+        # logger.info(f"lm_logits: {lm_logits.size()}")
+        # logger.info(f"lm_loss: {lm_loss}")
 
         # Manage the cache
         if self.config.rolling_cache_enabled:
@@ -419,7 +423,7 @@ class ImgLanguageModel(nn.Module):
             self.rolling_cache["img_feature_proj2"] = all_img_feature_proj2
             self.rolling_cache["text_feature_proj"] = all_text_feature_proj
 
-        # print(
+        # logger.info(
         #     f'self.rolling_cache["text_feature_proj"]: {len(self.rolling_cache["text_feature_proj"])}, self.rolling_cache["img_feature_proj1"]: {len(self.rolling_cache["img_feature_proj1"])}, self.rolling_cache["img_feature_proj2"]: {len(self.rolling_cache["img_feature_proj2"])}'
         # )
 

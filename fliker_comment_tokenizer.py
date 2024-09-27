@@ -6,9 +6,12 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "1"
 
 from config import Config
+from common_util import get_logger
 from pathlib import Path
 from transformers import AutoTokenizer
 from tqdm import tqdm
+
+logger = get_logger(__name__)
 
 
 class FlikerCommentTokenizer:
@@ -48,7 +51,7 @@ class FlikerCommentTokenizer:
         )
 
         new_tokenizer.save_pretrained(config.fliker_comment_tokenizer_local_path)
-        print(
+        logger.info(
             f"Saved new fliker comment tokenizer at: {config.fliker_comment_tokenizer_local_path}"
         )
         assert len(new_tokenizer) == FlikerCommentTokenizer.TOKENS
@@ -68,6 +71,6 @@ class FlikerCommentTokenizer:
         else:
             tokenizer = FlikerCommentTokenizer.train_tokenizer(config=config)
 
-        print(f"tokens: {len(tokenizer)}")
-        print(f"tokenizer.is_fast: {tokenizer.is_fast}")
+        logger.info(f"tokens: {len(tokenizer)}")
+        logger.info(f"tokenizer.is_fast: {tokenizer.is_fast}")
         return tokenizer

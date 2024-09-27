@@ -1,8 +1,10 @@
+import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 from caption_util import plot_caption_pred
+from common_util import get_logger
 from config import Config
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -28,8 +30,10 @@ from torch.profiler import profile, record_function, ProfilerActivity
 from torch.utils.data import DataLoader
 import torchvision.transforms.functional as VF
 
+logger = get_logger(__name__)
 
-def create_dataloaders(config: Config, train_setting: TrainSetting):
+
+def init_dataloaders(config: Config, train_setting: TrainSetting):
     split_portions: Tuple[float, float] = (0.72, 0.18, 0.1)
     train_dataset = ImgCommentDataset(
         config, split="train", split_portions=split_portions
@@ -40,9 +44,9 @@ def create_dataloaders(config: Config, train_setting: TrainSetting):
     test_dataset = ImgCommentDataset(
         config, split="test", split_portions=split_portions
     )
-    print(f"train_dataset:  {len(train_dataset)}")
-    print(f"eval_dataset:  {len(eval_dataset)}")
-    print(f"test_dataset:  {len(test_dataset)}")
+    logger.info(f"train_dataset:  {len(train_dataset)}")
+    logger.info(f"eval_dataset:  {len(eval_dataset)}")
+    logger.info(f"test_dataset:  {len(test_dataset)}")
 
     # Data Loader
     train_dataloader = DataLoader(
@@ -56,9 +60,9 @@ def create_dataloaders(config: Config, train_setting: TrainSetting):
     test_dataloader = DataLoader(
         test_dataset, batch_size=train_setting.batch_size, shuffle=True, num_workers=1
     )
-    print(f"train_dataloader:  {len(train_dataloader)}")
-    print(f"eval_data_loader:  {len(eval_dataloader)}")
-    print(f"test_data_loader:  {len(test_dataloader)}")
+    logger.info(f"train_dataloader:  {len(train_dataloader)}")
+    logger.info(f"eval_data_loader:  {len(eval_dataloader)}")
+    logger.info(f"test_data_loader:  {len(test_dataloader)}")
 
     train_setting.train_dataloader = train_dataloader
     train_setting.eval_dataloader = eval_dataloader
@@ -77,11 +81,11 @@ def create_model(config: Config, train_setting: TrainSetting):
         batch_comment_encoding,
         batch_text_mask,
     ) = next(iter(train_setting.train_dataloader))
-    print(f"batch_aug_img_tensor1: {batch_aug_img_tensor1.size()}")
-    print(f"batch_aug_img_tensor2: {batch_aug_img_tensor2.size()}")
-    print(f"batch_img_id_tensor: {batch_img_id_tensor.size()}")
-    print(f"batch_comment_encoding: {batch_comment_encoding.size()}")
-    print(f"batch_text_mask: {batch_text_mask.size()}")
+    logger.info(f"batch_aug_img_tensor1: {batch_aug_img_tensor1.size()}")
+    logger.info(f"batch_aug_img_tensor2: {batch_aug_img_tensor2.size()}")
+    logger.info(f"batch_img_id_tensor: {batch_img_id_tensor.size()}")
+    logger.info(f"batch_comment_encoding: {batch_comment_encoding.size()}")
+    logger.info(f"batch_text_mask: {batch_text_mask.size()}")
     (
         img_img_loss,
         img_text_loss,
@@ -98,17 +102,19 @@ def create_model(config: Config, train_setting: TrainSetting):
         batch_text_mask_tensor=batch_text_mask,
         batch_img_id_tensor=batch_img_id_tensor,
     )
-    print(f"img_img_loss: {img_img_loss}")
-    print(f"img_text_loss: {img_text_loss}")
-    print(f"text_img_loss: {text_img_loss}")
-    print(f"lm_loss: {lm_loss}")
+    logger.info(f"img_img_loss: {img_img_loss}")
+    logger.info(f"img_text_loss: {img_text_loss}")
+    logger.info(f"text_img_loss: {text_img_loss}")
+    logger.info(f"lm_loss: {lm_loss}")
 
     pytorch_total_params = sum(p.numel() for p in model.parameters())
     pytorch_total_trainable_params = sum(
         p.numel() for p in model.parameters() if p.requires_grad
     )
-    print(f"pytorch_total_params: {pytorch_total_params/10**6} m")
-    print(f"pytorch_total_trainable_params: {pytorch_total_trainable_params/10**6} m")
+    logger.info(f"pytorch_total_params: {pytorch_total_params/10**6} m")
+    logger.info(
+        f"pytorch_total_trainable_params: {pytorch_total_trainable_params/10**6} m"
+    )
     count_parameters(model)
 
     return model
@@ -312,6 +318,8 @@ def train(
     config: Config,
     train_setting: TrainSetting,
     writer: SummaryWriter,
+    start_epoch: int = 0,
+    start_global_step: int = 0,
     debug: bool = False,
 ):
     best_vloss = torch.tensor(1_000_000)
@@ -329,11 +337,20 @@ def train(
         running_text_accuracy = torch.tensor(
             0, dtype=torch.float32, device=torch.device("cpu")
         )
+
+        logger.info(f"start_epoch: {start_epoch}")
+        logger.info(f"start_global_step: {start_global_step}")
         # with torch.mps.profiler.profile(mode="interval", wait_until_completed=False):
         for epoch in range(train_setting.epoches):
+            if epoch < start_epoch:
+                continue
             train_dataloader_len = len(train_setting.train_dataloader)
             for train_step, data in enumerate(train_setting.train_dataloader):
-                global_step = epoch * len(train_setting.train_dataloader) + train_step
+                global_step = (
+                    epoch * len(train_setting.train_dataloader)
+                    + train_step
+                    + start_global_step
+                )
 
                 writer.add_scalar("epch", epoch, global_step)
 
@@ -590,7 +607,7 @@ def create_scheduler(config: Config, train_setting: TrainSetting):
     return scheduler
 
 
-def get_train_device(train_setting: TrainSetting):
+def init_train_device(train_setting: TrainSetting):
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
@@ -602,41 +619,81 @@ def get_train_device(train_setting: TrainSetting):
     return device
 
 
-def load_model(config: Config, train_setting: TrainSetting, model_path: str):
+def load_checkpoint(
+    model_path: str,
+    override_config: Config = None,
+    override_train_setting: TrainSetting = None,
+) -> Tuple[nn.Module, torch.optim.Optimizer, Config, TrainSetting, int, int]:
+    # Load checkpoint
+    checkpoint = torch.load(model_path, weights_only=False)
+    logger.info(checkpoint.keys())
+
+    # Load Config
+    if override_config is not None:
+        config = override_config
+    else:
+        config = Config(**checkpoint["config"])
+
+    # Load TrainSetting and
+    if override_train_setting is not None:
+        train_setting = override_train_setting
+    else:
+        train_setting = TrainSetting(**checkpoint["train_settings"])
+    init_train_device(train_setting=train_setting)
+    logger.info(f"train_setting.device: {train_setting.device}")
+
+    # Load Model
     model_trained = ImgLanguageModel(config=config)
-    model_trained.load_state_dict(torch.load(model_path))
+    model_trained.load_state_dict(checkpoint["model_state_dict"])
     model_trained = model_trained.to(train_setting.device)
-    return model_trained
 
+    # Load optimizer
+    optimizer = create_optimizer(
+        config=config, train_setting=train_setting, model=model_trained
+    )
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    assert optimizer is not None
 
-def train_model(debug: bool = False):
-    config = Config()
-    train_setting = TrainSetting()
+    # Load training progress
+    epoch = checkpoint["epoch"]
+    global_step = checkpoint["global_step"]
 
-    # fine turn
-    # train_setting.lr = 1e-4
-
-    device = get_train_device(train_setting=train_setting)
-
-    create_dataloaders(
+    init_dataloaders(
         config=config,
         train_setting=train_setting,
     )
 
-    model = create_model(config=config, train_setting=train_setting)
-    # model = load_model(
-    #     config=config,
-    #     train_setting=train_setting,
-    #     model_path="/Users/chengbai/ml/cheng_git/notebooks/vlm_caption_model_20240905_023757_final",
-    # )
-    # if train_setting.device != torch.device("mps"):
-    #     model = torch.compile(model)
+    return model_trained, optimizer, config, train_setting, epoch, global_step
 
-    model = model.to(device)
-    optimizer = create_optimizer(
-        config=config, train_setting=train_setting, model=model
-    )
-    assert optimizer is not None
+
+def train_model(checkpoint: str = None, debug: bool = False):
+    config = Config()
+
+    if not checkpoint:
+        train_setting = TrainSetting()
+
+        init_train_device(train_setting=train_setting)
+
+        init_dataloaders(
+            config=config,
+            train_setting=train_setting,
+        )
+
+        model = create_model(config=config, train_setting=train_setting)
+        model = model.to(train_setting.device)
+        optimizer = create_optimizer(
+            config=config, train_setting=train_setting, model=model
+        )
+        assert optimizer is not None
+
+        start_epoch = 0
+        start_global_step = 0
+    else:
+        model, optimizer, config, train_setting, start_epoch, start_global_step = (
+            load_checkpoint(model_path=checkpoint, override_config=config)
+        )
+        if train_setting.device != torch.device("mps"):
+            model = torch.compile(model)
 
     scheduler = create_scheduler(config=config, train_setting=train_setting)
     assert scheduler is not None
@@ -647,6 +704,8 @@ def train_model(debug: bool = False):
             config=config,
             train_setting=train_setting,
             writer=writer,
+            start_epoch=start_epoch,
+            start_global_step=start_global_step,
             debug=debug,
         )
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -668,4 +727,17 @@ def train_model(debug: bool = False):
 
 
 if __name__ == "__main__":
-    train_model(debug=False)
+    parser = argparse.ArgumentParser(description="VLM model training.")
+    parser.add_argument(
+        "--checkpoint", help="Start model training from given checkpoint", default=""
+    )
+    parser.add_argument("--debug", action="store_true")
+    args = parser.parse_args()
+
+    if args.checkpoint:
+        logger.info(f"Start model training from checkpoint: {args.checkpoint}.")
+
+    if args.debug:
+        logger.info("Running in debug mode.")
+
+    train_model(checkpoint=args.checkpoint, debug=args.debug)
