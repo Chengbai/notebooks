@@ -1,6 +1,8 @@
 import logging
 import json
+import torch
 import sys
+
 
 from pathlib import Path
 from typing import Dict
@@ -35,3 +37,17 @@ def load_json(json_file: str) -> Dict:
         json_data = json.load(f)
 
     return json_data
+
+
+def top_k_multinomial(probs: torch.tensor, k: int, num_samples: int = 1):
+    # Get the top k probabilities and their indices
+    top_k_probs, top_k_indices = torch.topk(probs, k, dim=-1)
+
+    # Renormalize the top k probabilities
+    top_k_probs = top_k_probs / torch.sum(top_k_probs, dim=-1, keepdim=True)
+
+    # Sample from the top k probabilities
+    samples = torch.multinomial(top_k_probs, num_samples, replacement=True)
+
+    # Map the sampled indices back to the original indices
+    return top_k_indices.gather(-1, samples)

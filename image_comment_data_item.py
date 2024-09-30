@@ -4,6 +4,7 @@ from typing import Dict
 
 @dataclass
 class ImgCommentDataItem:
+    source: str
     image_name: str
     comment_number: int
     comment: str

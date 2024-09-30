@@ -4,7 +4,7 @@ import PIL
 import torch
 import torchvision.transforms.functional as VF
 
-from common_util import get_logger
+from common_util import get_logger, top_k_multinomial
 from config import Config
 from fliker_comment_tokenizer import FlikerCommentTokenizer
 from img_util import load_img_tensor, inverse_img_aug
@@ -42,6 +42,7 @@ def create_caption_from_aug_img_tensor(
     comment_toeknizer = FlikerCommentTokenizer.get_tokenizer(
         config=img_langualge_model.config
     )
+    caption_tokens_max = []  # comment_toeknizer.encode("<bos>")[:1]
     caption_tokens = []  # comment_toeknizer.encode("<bos>")[:1]
     for index in range(img_langualge_model.config.max_text_len):
         normal_tokens, normal_mask = normalize_comment(
@@ -68,14 +69,45 @@ def create_caption_from_aug_img_tensor(
             bos_embedding=bos_embedding,
         )
         # logger.info(f"lm_loss: {lm_loss}, normal_mask: {normal_mask}")
-        cur_token = torch.argmax(lm_logits[0][index])
-        caption_tokens.append(cur_token)
+        cur_token_max = torch.argmax(lm_logits[0][index])
+        # logger.info(
+        #     f"argmax: cur_token_max: {cur_token_max}, caption_tokens: {caption_tokens_max}"
+        # )
+        lm_prob = torch.nn.Softmax(dim=-1)(lm_logits[0][index])
+        # logger.info(f"lm_prob: {lm_prob}")
+        # cur_token = torch.multinomial(input=lm_prob, num_samples=1)
+        cur_token = top_k_multinomial(
+            probs=lm_prob, k=img_langualge_model.config.sample_top_k, num_samples=1
+        )
+        # logger.info(
+        #     f"multinomial: cur_token: {cur_token}, lm_prob: {lm_prob[cur_token]}, caption_tokens: {caption_tokens}"
+        # )
+
+        # if len(caption_tokens) > 0 or cur_token.item() != 2:
+        #     caption_tokens.append(cur_token.item())  # to python int list
+
+        # if len(caption_tokens_max) > 0 or cur_token_max.item() != 2:
+        #     caption_tokens_max.append(cur_token_max.item())  # to python int list
+
+        caption_tokens.append(cur_token.item())  # to python int list
+        caption_tokens_max.append(cur_token_max.item())  # to python int list
+
         if (
-            cur_token == img_langualge_model.bos_token and len(caption_tokens) > 1
-        ):  # skip the 1st <bos>
+            cur_token == img_langualge_model.bos_token
+            and len(caption_tokens) > 1  # skip the 1st <bos>
+        ) or len(
+            caption_tokens
+        ) >= img_langualge_model.config.max_text_len:  # reach the max predction length
             break
 
-    caption = comment_toeknizer.decode(caption_tokens)
+    caption = comment_toeknizer.decode(caption_tokens)[
+        : img_langualge_model.config.max_text_len
+    ]
+    caption_max = comment_toeknizer.decode(caption_tokens_max)[
+        : img_langualge_model.config.max_text_len
+    ]
+    # logger.info(f"caption: {caption}")
+    # logger.info(f"caption_max: {caption_max}")
     return caption
 
 
@@ -90,7 +122,7 @@ def create_caption_from_img_file(
     )
     img_aug_tensor1 = img_aug_tensor1.to(device)
     img_aug_tensor2 = img_aug_tensor2.to(device)
-    img_org = inverse_img_aug(img_aug_tensor1)
+    img_org = inverse_img_aug(img_aug_tensor2)
     img_pil = VF.to_pil_image(img_org)
 
     caption = create_caption_from_aug_img_tensor(

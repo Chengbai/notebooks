@@ -1,10 +1,11 @@
 import torch
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 
 @dataclass
-class TrainSetting:
+class TrainSettings:
     batch_size = 20
     epoches = 5
     eval_interval_steps = 100

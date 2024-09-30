@@ -47,6 +47,7 @@ def load_fliker_data_items(config: Config) -> List[ImgCommentDataItem]:
     # The current `results.csv` file is using "| " to seperate 3 columns.
     # For the pd.read_csv, the `sep` here is given as a regular expression.
     df = pd.read_csv(img_comments_file, sep="|")
+    df["source"] = "fliker30k"
     data_items = [ImgCommentDataItem(**record) for record in df.to_dict("records")]
 
     # In Fliker data, one image have 5 comments

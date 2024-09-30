@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from typing import List, Tuple
 from vlm_model import ImgLanguageModel
-from train_settings import TrainSetting
+from train_settings import TrainSettings
 
 import torch
 import torch.nn as nn
@@ -33,7 +33,7 @@ import torchvision.transforms.functional as VF
 logger = get_logger(__name__)
 
 
-def init_dataloaders(config: Config, train_setting: TrainSetting):
+def init_dataloaders(config: Config, train_settings: TrainSettings):
     split_portions: Tuple[float, float] = (0.72, 0.18, 0.1)
     train_dataset = ImgCommentDataset(
         config, split="train", split_portions=split_portions
@@ -51,28 +51,28 @@ def init_dataloaders(config: Config, train_setting: TrainSetting):
     # Data Loader
     train_dataloader = DataLoader(
         train_dataset,
-        batch_size=train_setting.batch_size,
+        batch_size=train_settings.batch_size,
         shuffle=True,
     )
     eval_dataloader = DataLoader(
-        eval_dataset, batch_size=train_setting.batch_size, shuffle=True, num_workers=2
+        eval_dataset, batch_size=train_settings.batch_size, shuffle=True, num_workers=2
     )
     test_dataloader = DataLoader(
-        test_dataset, batch_size=train_setting.batch_size, shuffle=True, num_workers=1
+        test_dataset, batch_size=train_settings.batch_size, shuffle=True, num_workers=1
     )
     logger.info(f"train_dataloader:  {len(train_dataloader)}")
     logger.info(f"eval_data_loader:  {len(eval_dataloader)}")
     logger.info(f"test_data_loader:  {len(test_dataloader)}")
 
-    train_setting.train_dataloader = train_dataloader
-    train_setting.eval_dataloader = eval_dataloader
-    train_setting.test_dataloader = test_dataloader
+    train_settings.train_dataloader = train_dataloader
+    train_settings.eval_dataloader = eval_dataloader
+    train_settings.test_dataloader = test_dataloader
 
     return train_dataloader, eval_dataloader, test_dataloader
 
 
 # model
-def create_model(config: Config, train_setting: TrainSetting):
+def create_model(config: Config, train_settings: TrainSettings):
     model = ImgLanguageModel(config=config)
     (
         batch_aug_img_tensor1,
@@ -80,7 +80,7 @@ def create_model(config: Config, train_setting: TrainSetting):
         batch_img_id_tensor,
         batch_comment_encoding,
         batch_text_mask,
-    ) = next(iter(train_setting.train_dataloader))
+    ) = next(iter(train_settings.train_dataloader))
     logger.info(f"batch_aug_img_tensor1: {batch_aug_img_tensor1.size()}")
     logger.info(f"batch_aug_img_tensor2: {batch_aug_img_tensor2.size()}")
     logger.info(f"batch_img_id_tensor: {batch_img_id_tensor.size()}")
@@ -123,10 +123,13 @@ def create_model(config: Config, train_setting: TrainSetting):
 def eval(
     model: ImgLanguageModel,
     config: Config,
-    train_setting: TrainSetting,
+    train_settings: TrainSettings,
     global_step: int,
     writer: SummaryWriter,
 ):
+    # train_settings: TrainSettings = config.train_settings
+    assert train_settings is not None
+
     model.eval()
 
     avg_eval_loss = None
@@ -136,8 +139,8 @@ def eval(
     with torch.no_grad():
         eval_losses = []
         weighted_eval_losses = []
-        for i, data in enumerate(train_setting.eval_dataloader):
-            if i > train_setting.eval_steps:
+        for i, data in enumerate(train_settings.eval_dataloader):
+            if i > train_settings.eval_steps:
                 # It takes significant time to do one full eval.
                 break
 
@@ -148,11 +151,11 @@ def eval(
                 batch_text_tensor,
                 batch_text_mask_tensor,
             ) = data
-            batch_aug_img_tensor1 = batch_aug_img_tensor1.to(train_setting.device)
-            batch_aug_img_tensor2 = batch_aug_img_tensor2.to(train_setting.device)
-            batch_img_id_tensor = batch_img_id_tensor.to(train_setting.device)
-            batch_text_tensor = batch_text_tensor.to(train_setting.device)
-            batch_text_mask_tensor = batch_text_mask_tensor.to(train_setting.device)
+            batch_aug_img_tensor1 = batch_aug_img_tensor1.to(train_settings.device)
+            batch_aug_img_tensor2 = batch_aug_img_tensor2.to(train_settings.device)
+            batch_img_id_tensor = batch_img_id_tensor.to(train_settings.device)
+            batch_text_tensor = batch_text_tensor.to(train_settings.device)
+            batch_text_mask_tensor = batch_text_mask_tensor.to(train_settings.device)
 
             (
                 img_img_loss,
@@ -290,7 +293,7 @@ def eval(
         fig = plot_caption_pred(
             img_langualge_model=model,
             img_file_paths=img_file_paths,
-            device=train_setting.device,
+            device=train_settings.device,
         )
 
         writer.add_figure("Caption prediction", fig, global_step=global_step)
@@ -316,12 +319,15 @@ def log_gradients_in_model(
 def train(
     model: ImgLanguageModel,
     config: Config,
-    train_setting: TrainSetting,
+    train_settings: TrainSettings,
     writer: SummaryWriter,
     start_epoch: int = 0,
     start_global_step: int = 0,
     debug: bool = False,
 ):
+    # train_settings: TrainSettings = config.train_settings
+    assert train_settings is not None
+
     best_vloss = torch.tensor(1_000_000)
     with torch.profiler.profile(
         schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
@@ -341,13 +347,13 @@ def train(
         logger.info(f"start_epoch: {start_epoch}")
         logger.info(f"start_global_step: {start_global_step}")
         # with torch.mps.profiler.profile(mode="interval", wait_until_completed=False):
-        for epoch in range(train_setting.epoches):
+        for epoch in range(train_settings.epoches):
             if epoch < start_epoch:
                 continue
-            train_dataloader_len = len(train_setting.train_dataloader)
-            for train_step, data in enumerate(train_setting.train_dataloader):
+            train_dataloader_len = len(train_settings.train_dataloader)
+            for train_step, data in enumerate(train_settings.train_dataloader):
                 global_step = (
-                    epoch * len(train_setting.train_dataloader)
+                    epoch * len(train_settings.train_dataloader)
                     + train_step
                     + start_global_step
                 )
@@ -358,6 +364,12 @@ def train(
                 if global_step < 1 + 1 + 3:
                     prof.step()
 
+                # Debugging info
+                config.debugging = (
+                    global_step % config.debugging_step_interval
+                    < config.debugging_step_window
+                )
+
                 (
                     batch_aug_img_tensor1,
                     batch_aug_img_tensor2,
@@ -365,11 +377,13 @@ def train(
                     batch_text_tensor,
                     batch_text_mask_tensor,
                 ) = data
-                batch_aug_img_tensor1 = batch_aug_img_tensor1.to(train_setting.device)
-                batch_aug_img_tensor2 = batch_aug_img_tensor2.to(train_setting.device)
-                batch_img_id_tensor = batch_img_id_tensor.to(train_setting.device)
-                batch_text_tensor = batch_text_tensor.to(train_setting.device)
-                batch_text_mask_tensor = batch_text_mask_tensor.to(train_setting.device)
+                batch_aug_img_tensor1 = batch_aug_img_tensor1.to(train_settings.device)
+                batch_aug_img_tensor2 = batch_aug_img_tensor2.to(train_settings.device)
+                batch_img_id_tensor = batch_img_id_tensor.to(train_settings.device)
+                batch_text_tensor = batch_text_tensor.to(train_settings.device)
+                batch_text_mask_tensor = batch_text_mask_tensor.to(
+                    train_settings.device
+                )
 
                 # Viz Model
                 # if global_step == 0:
@@ -463,10 +477,10 @@ def train(
 
                 writer.add_scalar(
                     "Learning Rate",
-                    train_setting.scheduler.get_last_lr()[-1],
+                    train_settings.scheduler.get_last_lr()[-1],
                     global_step,
                 )
-                loss = (train_loss) / train_setting.gradient_agg_steps
+                loss = (train_loss) / train_settings.gradient_agg_steps
 
                 loss.backward()
 
@@ -478,17 +492,17 @@ def train(
                         global_step=global_step,
                     )
 
-                if ((global_step + 1) % train_setting.gradient_agg_steps == 0) or (
+                if ((global_step + 1) % train_settings.gradient_agg_steps == 0) or (
                     global_step + 1 == train_dataloader_len
                 ):
                     # nn.utils.clip_grad_norm_(
-                    #     model.parameters(), max_norm=train_setting.max_l2_grad_norm
+                    #     model.parameters(), max_norm=train_settings.max_l2_grad_norm
                     # )
-                    train_setting.optimizer.step()
-                    train_setting.optimizer.zero_grad()
+                    train_settings.optimizer.step()
+                    train_settings.optimizer.zero_grad()
 
-                    for _ in range(train_setting.gradient_agg_steps):
-                        train_setting.scheduler.step()
+                    for _ in range(train_settings.gradient_agg_steps):
+                        train_settings.scheduler.step()
 
                 # Performance
                 img_pred = torch.argmax(img_text_contrastive_prob, dim=1).cpu()
@@ -496,16 +510,16 @@ def train(
                 img_accuracy = img_pred == label_mask
                 img_accuracy = img_accuracy.float().mean()
                 running_img_accuracy = (
-                    train_setting.train_accuracy_momentum * running_img_accuracy
-                    + (1 - train_setting.train_accuracy_momentum) * img_accuracy
+                    train_settings.train_accuracy_momentum * running_img_accuracy
+                    + (1 - train_settings.train_accuracy_momentum) * img_accuracy
                 )
 
                 text_pred = torch.argmax(text_img_contrastive_prob, dim=1).cpu()
                 text_accuracy = text_pred == label_mask
                 text_accuracy = text_accuracy.float().mean()
                 running_text_accuracy = (
-                    train_setting.train_accuracy_momentum * running_text_accuracy
-                    + (1 - train_setting.train_accuracy_momentum) * text_accuracy
+                    train_settings.train_accuracy_momentum * running_text_accuracy
+                    + (1 - train_settings.train_accuracy_momentum) * text_accuracy
                 )
                 writer.add_scalar(
                     "perf/Train Img Accuracy",
@@ -549,17 +563,17 @@ def train(
 
                 if (
                     train_step > 0
-                    and train_step % train_setting.eval_interval_steps == 0
+                    and train_step % train_settings.eval_interval_steps == 0
                 ):
                     assert (
-                        train_setting.eval_interval_steps
-                        % train_setting.gradient_agg_steps
+                        train_settings.eval_interval_steps
+                        % train_settings.gradient_agg_steps
                         == 0
                     ), ""
                     avg_vloss, _ = eval(
                         model=model,
                         config=config,
-                        train_setting=train_setting,
+                        train_settings=train_settings,
                         global_step=global_step,
                         writer=writer,
                     )
@@ -574,40 +588,40 @@ def train(
                             {
                                 "epoch": epoch,
                                 "global_step": global_step,
-                                "total_steps": len(train_setting.train_dataloader)
-                                * train_setting.epoches,
+                                "total_steps": len(train_settings.train_dataloader)
+                                * train_settings.epoches,
                                 "model_state_dict": model.state_dict(),
-                                "optimizer_state_dict": train_setting.optimizer.state_dict(),
+                                "optimizer_state_dict": train_settings.optimizer.state_dict(),
                                 "loss": best_vloss,
                                 "config": asdict(config),
-                                "train_settings": asdict(train_setting),
+                                "train_settings": asdict(train_settings),
                             },
                             model_path,
                         )
 
 
-def create_optimizer(config: Config, train_setting: TrainSetting, model: nn.Module):
-    optimizer = torch.optim.AdamW(params=model.parameters(), lr=train_setting.lr)
+def create_optimizer(config: Config, train_settings: TrainSettings, model: nn.Module):
+    optimizer = torch.optim.AdamW(params=model.parameters(), lr=train_settings.lr)
     # cqKMSkZKhJHGDHkcxSfU
     # scheduler = torch.optim.lr_scheduler.OneCycleLR(
     #     optimizer, max_lr=lr, steps_per_epoch=len(train_dataloader), epochs=epoches
     # )
     # ujlBwmQYUsBdDW
-    train_setting.optimizer = optimizer
+    train_settings.optimizer = optimizer
     return optimizer
 
 
-def create_scheduler(config: Config, train_setting: TrainSetting):
-    total_steps = train_setting.epoches * len(train_setting.train_dataloader)
+def create_scheduler(config: Config, train_settings: TrainSettings):
+    total_steps = train_settings.epoches * len(train_settings.train_dataloader)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        train_setting.optimizer,
+        train_settings.optimizer,
         T_max=total_steps,
     )
-    train_setting.scheduler = scheduler
+    train_settings.scheduler = scheduler
     return scheduler
 
 
-def init_train_device(train_setting: TrainSetting):
+def init_train_device(train_settings: TrainSettings):
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
@@ -615,15 +629,15 @@ def init_train_device(train_setting: TrainSetting):
     else:
         torch.device("cpu")
 
-    train_setting.device = device
+    train_settings.device = device
     return device
 
 
 def load_checkpoint(
     model_path: str,
     override_config: Config = None,
-    override_train_setting: TrainSetting = None,
-) -> Tuple[nn.Module, torch.optim.Optimizer, Config, TrainSetting, int, int]:
+    override_train_settings: TrainSettings = None,
+) -> Tuple[nn.Module, torch.optim.Optimizer, Config, TrainSettings, int, int]:
     # Load checkpoint
     checkpoint = torch.load(model_path, weights_only=False)
     logger.info(checkpoint.keys())
@@ -634,22 +648,22 @@ def load_checkpoint(
     else:
         config = Config(**checkpoint["config"])
 
-    # Load TrainSetting and
-    if override_train_setting is not None:
-        train_setting = override_train_setting
+    # Load TrainSettings and
+    if override_train_settings is not None:
+        train_settings = override_train_settings
     else:
-        train_setting = TrainSetting(**checkpoint["train_settings"])
-    init_train_device(train_setting=train_setting)
-    logger.info(f"train_setting.device: {train_setting.device}")
+        train_settings = TrainSettings(**checkpoint["train_settings"])
+    init_train_device(train_settings=train_settings)
+    logger.info(f"train_settings.device: {train_settings.device}")
 
     # Load Model
     model_trained = ImgLanguageModel(config=config)
     model_trained.load_state_dict(checkpoint["model_state_dict"])
-    model_trained = model_trained.to(train_setting.device)
+    model_trained = model_trained.to(train_settings.device)
 
     # Load optimizer
     optimizer = create_optimizer(
-        config=config, train_setting=train_setting, model=model_trained
+        config=config, train_settings=train_settings, model=model_trained
     )
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     assert optimizer is not None
@@ -660,49 +674,49 @@ def load_checkpoint(
 
     init_dataloaders(
         config=config,
-        train_setting=train_setting,
+        train_settings=train_settings,
     )
 
-    return model_trained, optimizer, config, train_setting, epoch, global_step
+    return model_trained, optimizer, config, train_settings, epoch, global_step
 
 
 def train_model(checkpoint: str = None, debug: bool = False):
     config = Config()
 
     if not checkpoint:
-        train_setting = TrainSetting()
+        train_settings = TrainSettings()
 
-        init_train_device(train_setting=train_setting)
+        init_train_device(train_settings=train_settings)
 
         init_dataloaders(
             config=config,
-            train_setting=train_setting,
+            train_settings=train_settings,
         )
 
-        model = create_model(config=config, train_setting=train_setting)
-        model = model.to(train_setting.device)
+        model = create_model(config=config, train_settings=train_settings)
+        model = model.to(train_settings.device)
         optimizer = create_optimizer(
-            config=config, train_setting=train_setting, model=model
+            config=config, train_settings=train_settings, model=model
         )
         assert optimizer is not None
 
         start_epoch = 0
         start_global_step = 0
     else:
-        model, optimizer, config, train_setting, start_epoch, start_global_step = (
+        model, optimizer, config, train_settings, start_epoch, start_global_step = (
             load_checkpoint(model_path=checkpoint, override_config=config)
         )
-        if train_setting.device != torch.device("mps"):
+        if train_settings.device != torch.device("mps"):
             model = torch.compile(model)
 
-    scheduler = create_scheduler(config=config, train_setting=train_setting)
+    scheduler = create_scheduler(config=config, train_settings=train_settings)
     assert scheduler is not None
 
     with SummaryWriter(flush_secs=1) as writer:
         train(
             model=model,
             config=config,
-            train_setting=train_setting,
+            train_settings=train_settings,
             writer=writer,
             start_epoch=start_epoch,
             start_global_step=start_global_step,
@@ -712,15 +726,15 @@ def train_model(checkpoint: str = None, debug: bool = False):
         model_path = f"vlm_caption_model_{timestamp}_final.pt"
         torch.save(
             {
-                "epoch": train_setting.epoches,  # final epoch
-                "total_steps": len(train_setting.train_dataloader)
-                * train_setting.epoches,
-                "global_step": len(train_setting.train_dataloader)
-                * train_setting.epoches,
+                "epoch": train_settings.epoches,  # final epoch
+                "total_steps": len(train_settings.train_dataloader)
+                * train_settings.epoches,
+                "global_step": len(train_settings.train_dataloader)
+                * train_settings.epoches,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "config": asdict(config),
-                "train_settings": asdict(train_setting),
+                "train_settings": asdict(train_settings),
             },
             model_path,
         )

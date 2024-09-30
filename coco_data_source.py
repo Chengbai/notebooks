@@ -17,6 +17,7 @@ class CocoAnnotation:
 
     def to_data_item(self) -> ImgCommentDataItem:
         return ImgCommentDataItem(
+            source="coco",
             image_name=self.image_file,
             image_id=self.id,
             comment=self.caption,

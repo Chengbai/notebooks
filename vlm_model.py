@@ -135,10 +135,24 @@ class ImgCaptionModel(nn.Module):
                 continue
             target_text_logits = batch_text_logits[bi][:token_length]
             target_text_token = batch_target_text_token[bi][:token_length]
+            if not self.training and target_text_token[0] != 2:
+                # At training time, expect all of the text token from dataloader will start with `<bos>` which has value 2.
+                raise Exception(
+                    f"batch_target_text_token[bi]: {batch_target_text_token[bi]}, target_text_token: {target_text_token}"
+                )
             target_text_loss = F.cross_entropy(
                 target_text_logits, target_text_token, reduction="mean"
             )
             batch_text_loss += target_text_loss
+
+            if self.training and self.config.debugging:
+                target_caption = self.tokenizer.decode(target_text_token)
+                prdict_token_max = torch.argmax(target_text_logits, dim=-1)
+                prdict_caption = self.tokenizer.decode(prdict_token_max)
+                logger.info(f"target_text_token: {target_text_token.size()}")
+                logger.info(f"target_text_logits: {target_text_logits.size()}")
+                logger.info(f"target_caption: {target_caption}")
+                logger.info(f"prdict_caption: {prdict_caption}")
 
         batch_text_loss = batch_text_loss / torch.tensor(
             B, device=batch_target_text_token.device

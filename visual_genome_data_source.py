@@ -17,6 +17,7 @@ class VisualGenomeImgInfo:
     def to_data_item(self) -> ImgCommentDataItem:
         item_id = int(self.image_id.replace("vg_", ""))
         return ImgCommentDataItem(
+            source="visual_genome",
             image_name=self.image,
             image_id=item_id,
             comment=self.caption,

@@ -1,6 +1,7 @@
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
+from train_settings import TrainSettings
 
 
 @dataclass
@@ -58,3 +59,11 @@ class Config:
     rolling_cache_enabled = False
     rolling_cache_warm_steps = 1000
     rolling_cache_size = 10
+
+    # Image Caption
+    sample_top_k = 10
+
+    # Debug
+    debugging = False
+    debugging_step_interval = 5000
+    debugging_step_window = 10

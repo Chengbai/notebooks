@@ -38,8 +38,16 @@
  ```
  python vlm_train.py
  ```
+ or 
+ ```
+ ./train.sh
+ ```
 
  - continue training from a given checkpoint
  ```
- python vlm_train.py --checkpoint /Users/chengbai/ml/cheng_git/notebooks/vlm_caption_model_0_20240927_073655_2500.pt
+ python vlm_train.py --checkpoint /Users/chengbai/ml/cheng_git/notebooks/vlm_caption_model_0_20240929_021240_21300.pt
+ ```
+ or 
+ ```
+ ./train.sh /Users/chengbai/ml/cheng_git/notebooks/vlm_caption_model_0_20240929_021240_21300.pt
  ```
