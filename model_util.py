@@ -1,4 +1,8 @@
+import torch
+import torch.nn as nn
+
 from common_util import get_logger
+from config import Config
 from prettytable import PrettyTable
 
 logger = get_logger(__name__)
@@ -16,3 +20,17 @@ def count_parameters(model):
     logger.info(table)
     logger.info(f"Total Trainable Params: {total_params}")
     return total_params
+
+
+def load_model(
+    config: Config, model_file: str, device: torch.device = torch.device("cuda")
+) -> nn.Module:
+    # Loading Model
+    from vlm_model import ImgLanguageModel
+
+    target_model = ImgLanguageModel(config=config)
+    checkpoint = torch.load(model_file, weights_only=False)
+    print(checkpoint.keys())
+    target_model.load_state_dict(checkpoint["model_state_dict"])
+    target_model = target_model.to(device)
+    return target_model
