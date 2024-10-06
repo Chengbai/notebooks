@@ -21,8 +21,8 @@ class ImageEmbedding(nn.Module):
         self.config = config
 
         self.conv = nn.Conv2d(
-            3,
-            config.img_patch_embedding,
+            in_channels=3,
+            out_channels=config.img_patch_embedding,
             kernel_size=config.img_patch_size,
             stride=config.img_patch_size,
             padding="valid",

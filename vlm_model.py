@@ -233,6 +233,13 @@ class ImgLanguageModel(nn.Module):
             tokenizer=self.text_transformer.text_token_embedding.text_encoder,
         )
 
+        # with weight tying when using torch.compile() some warnings get generated:
+        # "UserWarning: functional_call was passed multiple values for tied weights.
+        # https://paperswithcode.com/method/weight-tying
+        self.img_caption_model.transformer.text_token_embedding.embeddings.weight = (
+            self.text_transformer.text_token_embedding.embeddings.weight
+        )
+
         self.rolling_cache = {}
 
         self.initialize_parameters()
@@ -308,8 +315,8 @@ class ImgLanguageModel(nn.Module):
             and cached_img_feature_proj1 is not None
             and cached_img_feature_proj2 is not None
         ):
-            assert cached_img_feature_proj1.size()[0] == self.config.rolling_cache_size
-            assert cached_img_feature_proj2.size()[0] == self.config.rolling_cache_size
+            assert cached_img_feature_proj1.size()[0] <= self.config.rolling_cache_size
+            assert cached_img_feature_proj2.size()[0] <= self.config.rolling_cache_size
             all_img_feature_proj1 = torch.vstack(
                 [
                     img_feature_proj1,
