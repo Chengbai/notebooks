@@ -20,7 +20,7 @@ from text_token_embedding import TextTokenEmbedding
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from typing import List, Tuple
-from vlm_model import ImgLanguageModel
+from vlm_img_lang_model import ImgLanguageModel
 from train_settings import TrainSettings
 
 import torch

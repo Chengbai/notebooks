@@ -10,7 +10,7 @@ from fliker_comment_tokenizer import FlikerCommentTokenizer
 from img_util import load_img_tensor, inverse_img_aug
 from text_util import normalize_comment
 from typing import List, Tuple
-from vlm_model import ImgLanguageModel
+from vlm_img_lang_model import ImgLanguageModel
 
 logger = get_logger(__name__)
 

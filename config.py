@@ -56,7 +56,7 @@ class Config:
     lm_loss_weight = 1.0
 
     # rolling window cache recent features
-    rolling_cache_enabled = True
+    rolling_cache_enabled = False
     rolling_cache_warm_steps = 1000
     rolling_cache_size = 1000
 
