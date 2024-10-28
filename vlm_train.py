@@ -582,7 +582,7 @@ def train(
                         best_vloss = avg_vloss
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         model_path = (
-                            f"vlm_caption_model_{epoch}_{timestamp}_{global_step}.pt"
+                            f"vlm_caption_model_{timestamp}_{epoch}_{global_step}.pt"
                         )
                         torch.save(
                             {
