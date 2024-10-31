@@ -26,7 +26,7 @@ def load_model(
     config: Config, model_file: str, device: torch.device = torch.device("cuda")
 ) -> nn.Module:
     # Loading Model
-    from vlm_model import ImgLanguageModel
+    from vlm_img_lang_model import ImgLanguageModel
 
     target_model = ImgLanguageModel(config=config)
     checkpoint = torch.load(model_file, weights_only=False)

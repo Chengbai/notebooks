@@ -480,7 +480,7 @@ def train(
                     train_settings.scheduler.get_last_lr()[-1],
                     global_step,
                 )
-                loss = (train_loss) / train_settings.gradient_agg_steps
+                loss = (train_loss) / train_settings.gradient_accum_steps
 
                 loss.backward()
 
@@ -492,17 +492,20 @@ def train(
                         global_step=global_step,
                     )
 
-                if ((global_step + 1) % train_settings.gradient_agg_steps == 0) or (
-                    global_step + 1 == train_dataloader_len
-                ):
+                if (
+                    global_step > 0
+                    and global_step % train_settings.gradient_accum_steps == 0
+                ) or (global_step == train_dataloader_len):
                     # nn.utils.clip_grad_norm_(
                     #     model.parameters(), max_norm=train_settings.max_l2_grad_norm
                     # )
                     train_settings.optimizer.step()
                     train_settings.optimizer.zero_grad()
 
-                    for _ in range(train_settings.gradient_agg_steps):
+                    for _ in range(train_settings.gradient_accum_steps):
                         train_settings.scheduler.step()
+                else:
+                    continue
 
                 # Performance
                 img_pred = torch.argmax(img_text_contrastive_prob, dim=1).cpu()
@@ -562,12 +565,12 @@ def train(
                 # ---------------------------------------------------------------------------------------------------------------
 
                 if (
-                    train_step > 0
-                    and train_step % train_settings.eval_interval_steps == 0
+                    global_step > 0
+                    and global_step % train_settings.eval_interval_steps == 0
                 ):
                     assert (
                         train_settings.eval_interval_steps
-                        % train_settings.gradient_agg_steps
+                        % train_settings.gradient_accum_steps
                         == 0
                     ), ""
                     avg_vloss, _ = eval(
@@ -685,6 +688,7 @@ def train_model(checkpoint: str = None, debug: bool = False):
 
     if not checkpoint:
         train_settings = TrainSettings()
+        train_settings.validate()
 
         init_train_device(train_settings=train_settings)
 
@@ -713,6 +717,8 @@ def train_model(checkpoint: str = None, debug: bool = False):
     assert scheduler is not None
 
     with SummaryWriter(flush_secs=1) as writer:
+        writer.add_hparams(hparam_dict=config.to_json(), metric_dict={})
+        writer.add_hparams(hparam_dict=train_settings.to_json(), metric_dict={})
         train(
             model=model,
             config=config,

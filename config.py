@@ -67,3 +67,6 @@ class Config:
     debugging = False
     debugging_step_interval = 5000
     debugging_step_window = 10
+
+    def to_json(self) -> dict:
+        return asdict(self)
