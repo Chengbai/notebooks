@@ -1,4 +1,5 @@
 import argparse
+import json
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -717,8 +718,10 @@ def train_model(checkpoint: str = None, debug: bool = False):
     assert scheduler is not None
 
     with SummaryWriter(flush_secs=1) as writer:
-        writer.add_hparams(hparam_dict=config.to_json(), metric_dict={})
-        writer.add_hparams(hparam_dict=train_settings.to_json(), metric_dict={})
+        # writer.add_hparams(hparam_dict=config.to_json(), metric_dict={})
+        # writer.add_hparams(hparam_dict=train_settings.to_json(), metric_dict={})
+        writer.add_scalar("config", json.dumps(config.to_json()))
+        writer.add_scalar("train_settings", json.dumps(train_settings.to_json()))
         train(
             model=model,
             config=config,
