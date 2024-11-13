@@ -3,6 +3,12 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import os
+import sys
+
+here = os.path.dirname(__file__)
+
+sys.path.append(os.path.join(here, ".."))
 
 from caption_util import plot_caption_pred
 from common_util import get_logger
@@ -21,7 +27,9 @@ from text_token_embedding import TextTokenEmbedding
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from typing import List, Tuple
-from vlm_img_lang_model import ImgLanguageModel
+from exp_att_val_transformer.vlm_img_lang_att_val_transformer_model import (
+    ImgLanguageAttValTransformerModel,
+)
 from train_settings import TrainSettings
 
 import torch
@@ -74,7 +82,7 @@ def init_dataloaders(config: Config, train_settings: TrainSettings):
 
 # model
 def create_model(config: Config, train_settings: TrainSettings):
-    model = ImgLanguageModel(config=config)
+    model = ImgLanguageAttValTransformerModel(config=config)
     (
         batch_aug_img_tensor1,
         batch_aug_img_tensor2,
@@ -122,7 +130,7 @@ def create_model(config: Config, train_settings: TrainSettings):
 
 
 def eval(
-    model: ImgLanguageModel,
+    model: ImgLanguageAttValTransformerModel,
     config: Config,
     train_settings: TrainSettings,
     global_step: int,
@@ -318,7 +326,7 @@ def log_gradients_in_model(
 
 
 def train(
-    model: ImgLanguageModel,
+    model: ImgLanguageAttValTransformerModel,
     config: Config,
     train_settings: TrainSettings,
     writer: SummaryWriter,
@@ -661,7 +669,7 @@ def load_checkpoint(
     logger.info(f"train_settings.device: {train_settings.device}")
 
     # Load Model
-    model_trained = ImgLanguageModel(config=config)
+    model_trained = ImgLanguageAttValTransformerModel(config=config)
     model_trained.load_state_dict(checkpoint["model_state_dict"])
     model_trained = model_trained.to(train_settings.device)
 
@@ -720,8 +728,6 @@ def train_model(checkpoint: str = None, debug: bool = False):
     with SummaryWriter(flush_secs=1) as writer:
         writer.add_hparams(hparam_dict=config.to_json(), metric_dict={})
         writer.add_hparams(hparam_dict=train_settings.to_json(), metric_dict={})
-        # writer.add_scalars("config", config.to_json())
-        # writer.add_scalars("train_settings", train_settings.to_json())
         train(
             model=model,
             config=config,

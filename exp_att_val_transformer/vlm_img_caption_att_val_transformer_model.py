@@ -14,7 +14,9 @@ from img_comment_dataset import ImgCommentDataset
 from model_util import count_parameters
 from pathlib import Path
 from text_token_embedding import TextTokenEmbedding
-from text_casual_mask_transformer import TextMaskedTransformer
+from exp_att_val_transformer.text_casual_mask_att_val_transformer import (
+    TextAttValMaskedTransformer,
+)
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from typing import Tuple
@@ -30,7 +32,7 @@ import torchvision.transforms.functional as VF
 logger = get_logger(__name__)
 
 
-class ImgCaptionModel(nn.Module):
+class ImgCaptionAttValTransformerModel(nn.Module):
     def __init__(self, config: Config, tokenizer):
         super().__init__()
 
@@ -69,7 +71,7 @@ class ImgCaptionModel(nn.Module):
             ]
         )
         self.mask = torch.vstack([self.img_bos_mask, self.text_mask])
-        self.transformer = TextMaskedTransformer(config=config, mask=self.mask)
+        self.transformer = TextAttValMaskedTransformer(config=config, mask=self.mask)
         self.lm_head = nn.Linear(
             config.text_token_embedding, tokenizer.vocab_size, bias=False
         )
@@ -138,7 +140,7 @@ class ImgCaptionModel(nn.Module):
             if self.training and target_text_token[0] != 2:
                 # At training time, expect all of the text token from dataloader will start with `<bos>` which has value 2.
                 raise Exception(
-                    f"self.training: {self.training}, batch_target_text_token[bi]: {batch_target_text_token[bi]}, target_text_token: {target_text_token}"
+                    f"batch_target_text_token[bi]: {batch_target_text_token[bi]}, target_text_token: {target_text_token}"
                 )
             target_text_loss = F.cross_entropy(
                 target_text_logits, target_text_token, reduction="mean"
