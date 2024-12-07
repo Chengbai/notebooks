@@ -1,11 +1,12 @@
 from config import Config
 from image_comment_data_item import ImgCommentDataItem
+from pathlib import Path
 from typing import List
 
 
 def get_test_data_items() -> List[ImgCommentDataItem]:
     config = Config()
-    fliker_imgs_folder = config.fliker_img_comments_folder / "flickr30k_images"
+    fliker_imgs_folder = Path(config.fliker_img_comments_folder) / "flickr30k_images"
 
     return [
         ImgCommentDataItem(

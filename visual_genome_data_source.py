@@ -28,7 +28,9 @@ class VisualGenomeImgInfo:
 def load_visual_genome_data_items(config: Config) -> List[ImgCommentDataItem]:
     assert config is not None
 
-    visual_genome_train_file = config.visual_genome_img_comments_folder / "vg.json"
+    visual_genome_train_file = (
+        Path(config.visual_genome_img_comments_folder) / "vg.json"
+    )
     captions_train_json = load_json(visual_genome_train_file)
     visual_genome_img_info = [
         VisualGenomeImgInfo(**img_annotation) for img_annotation in captions_train_json
@@ -37,7 +39,7 @@ def load_visual_genome_data_items(config: Config) -> List[ImgCommentDataItem]:
     # Reset the img file path
     for img_info in visual_genome_img_info:
         img_file_path = (
-            config.visual_genome_img_comments_folder / Path(img_info.image).name
+            Path(config.visual_genome_img_comments_folder) / Path(img_info.image).name
         )
         img_info.image = str(img_file_path) if img_file_path.exists() else None
         # Reset to None if the image file is not exist

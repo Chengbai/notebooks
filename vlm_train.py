@@ -53,6 +53,8 @@ def init_dataloaders(config: Config, train_settings: TrainSettings):
         train_dataset,
         batch_size=train_settings.batch_size,
         shuffle=True,
+        num_workers=10,
+        pin_memory=True,
     )
     eval_dataloader = DataLoader(
         eval_dataset, batch_size=train_settings.batch_size, shuffle=True, num_workers=2
@@ -313,7 +315,9 @@ def log_gradients_in_model(
         return
     for pname, value in model.named_parameters():
         if pname in parameter_names and value.grad is not None:
-            writer.add_histogram(pname + "/grad", value.grad.cpu(), global_step)
+            writer.add_histogram(
+                pname + "/grad", value.grad.detach().cpu(), global_step
+            )
 
 
 def train(
@@ -322,13 +326,13 @@ def train(
     train_settings: TrainSettings,
     writer: SummaryWriter,
     start_epoch: int = 0,
-    start_global_step: int = 0,
+    # start_global_step: int = 0,
     debug: bool = False,
 ):
     # train_settings: TrainSettings = config.train_settings
     assert train_settings is not None
 
-    best_vloss = torch.tensor(1_000_000)
+    best_vloss = torch.tensor(1_000_000.0)
     with torch.profiler.profile(
         schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
         on_trace_ready=torch.profiler.tensorboard_trace_handler("./runs"),
@@ -345,7 +349,7 @@ def train(
         )
 
         logger.info(f"start_epoch: {start_epoch}")
-        logger.info(f"start_global_step: {start_global_step}")
+        # logger.info(f"start_global_step: {start_global_step}")
         # with torch.mps.profiler.profile(mode="interval", wait_until_completed=False):
         for epoch in range(train_settings.epoches):
             if epoch < start_epoch:
@@ -355,7 +359,7 @@ def train(
                 global_step = (
                     epoch * len(train_settings.train_dataloader)
                     + train_step
-                    + start_global_step
+                    # + start_global_step
                 )
 
                 writer.add_scalar("epch", epoch, global_step)
@@ -387,7 +391,22 @@ def train(
 
                 # Viz Model
                 # if global_step == 0:
-                #     writer.add_graph(model, (batch_img_tensor, batch_target_tensor))
+                #     x = (
+                #         batch_aug_img_tensor1,
+                #         batch_aug_img_tensor2,
+                #         batch_text_tensor,
+                #         batch_text_mask_tensor,
+                #         batch_img_id_tensor,
+                #     )
+                #     writer.add_graph(
+                #         model,
+                #         x,
+                #     )
+
+                #     # import torch.onnx
+
+                #     # torch.onnx.export(model, x, "model.onnx", verbose=False)
+                #     continue
 
                 (
                     img_img_loss,
@@ -406,143 +425,167 @@ def train(
                     batch_img_id_tensor=batch_img_id_tensor,
                 )
 
-                # Loss
-                writer.add_scalar("train/Img-Img Loss", img_img_loss, global_step)
-                writer.add_scalar("train/Img-Text Loss", img_text_loss, global_step)
-                writer.add_scalar("train/Text-Img Loss", text_img_loss, global_step)
-                writer.add_scalar("train/LM Loss", lm_loss, global_step)
-                writer.add_scalar(
-                    "train/Loss",
-                    img_img_loss + img_text_loss + text_img_loss + lm_loss,
-                    global_step,
-                )
-
                 # Weighted Loss
                 weighted_img_img_loss = config.img_img_loss_weight * img_img_loss
-                writer.add_scalar(
-                    "weighted train/Img-Img Loss Weight",
-                    config.img_img_loss_weight,
-                    global_step,
-                )
-                writer.add_scalar(
-                    "weighted train/Img-Img Loss",
-                    weighted_img_img_loss,
-                    global_step,
-                )
                 weighted_img_text_loss = config.img_text_loss_weight * img_text_loss
-                writer.add_scalar(
-                    "weighted train/Img-Text Loss Weight",
-                    config.img_text_loss_weight,
-                    global_step,
-                )
-                writer.add_scalar(
-                    "weighted train/Img-Text Loss",
-                    weighted_img_text_loss,
-                    global_step,
-                )
                 weighted_text_img_loss = config.text_img_loss_weight * text_img_loss
-                writer.add_scalar(
-                    "weighted train/Text-Img Loss Weight",
-                    config.text_img_loss_weight,
-                    global_step,
-                )
-                writer.add_scalar(
-                    "weighted train/Text-Img Loss",
-                    weighted_text_img_loss,
-                    global_step,
-                )
                 weighted_lm_loss = config.lm_loss_weight * lm_loss
-                writer.add_scalar(
-                    "weighted train/LM Loss Weight",
-                    config.lm_loss_weight,
-                    global_step,
-                )
-                writer.add_scalar(
-                    "weighted train/LM Loss",
-                    weighted_lm_loss,
-                    global_step,
-                )
-
                 train_loss = (
                     weighted_img_img_loss
                     + weighted_img_text_loss
                     + weighted_text_img_loss
                     + weighted_lm_loss
                 )
-                writer.add_scalar(
-                    "weighted train/Loss",
-                    train_loss,
-                    global_step,
-                )
 
-                writer.add_scalar(
-                    "Learning Rate",
-                    train_settings.scheduler.get_last_lr()[-1],
-                    global_step,
-                )
-                loss = (train_loss) / train_settings.gradient_agg_steps
+                """ Gradient accumuation Logic
+                    - gradient_accu = 4
+                    - (global_step % gradient_accu): 
+                                   [0,          1,          2,          3,          4,          5,          6,          7,          ...]
+                                    |-act1      |           |           |           |           |           |           |
+                                    |-act2      |           |           |           |           |           |           |
+                                    |           |-act1      |           |           |           |           |           |
+                                    |           |           |-act1      |           |           |           |           |
+                                    |           |           |           |-act1      |           |           |           |
+                                    |           |           |           |-act3      |           |           |           |
+                                    |           |           |           |           |-act1      |           |           |
+                                    |           |           |           |           |-act2      |           |           |
+                                    |           |           |           |           |           |-act1      |           |
+                                    |           |           |           |           |           |           |-act1      |
+                                    |           |           |           |           |           |           |           |-act1
+                                    |           |           |           |           |           |           |           |-act3
+                                    ...
+                                    
+                    - actions:
+                        - act1: accumuate gradient
+                        - act2: compute and viz perf metrics
+                        - act3: optimizer.step + optimizer.zero_grad + scheduler.stop
+                """
 
+                # Action 1: always  accumulate gradient
+                loss = train_loss / train_settings.gradient_accum_steps
                 loss.backward()
 
-                if debug:
-                    log_gradients_in_model(
-                        model=model,
-                        parameter_names=["img_embedding.conv.weight"],
-                        writer=writer,
-                        global_step=global_step,
+                if (
+                    global_step > 0
+                    and global_step % train_settings.gradient_accum_steps == 0
+                ):
+                    # Action 2: compute and viz perf metrics
+                    # Loss metrics
+                    writer.add_scalar("train/Img-Img Loss", img_img_loss, global_step)
+                    writer.add_scalar("train/Img-Text Loss", img_text_loss, global_step)
+                    writer.add_scalar("train/Text-Img Loss", text_img_loss, global_step)
+                    writer.add_scalar("train/LM Loss", lm_loss, global_step)
+                    writer.add_scalar(
+                        "train/Loss",
+                        img_img_loss + img_text_loss + text_img_loss + lm_loss,
+                        global_step,
                     )
 
-                if ((global_step + 1) % train_settings.gradient_agg_steps == 0) or (
-                    global_step + 1 == train_dataloader_len
-                ):
+                    # Weighted Loss metrics
+                    writer.add_scalar(
+                        "weighted train/Img-Img Loss Weight",
+                        config.img_img_loss_weight,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "weighted train/Img-Img Loss",
+                        weighted_img_img_loss,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "weighted train/Img-Text Loss Weight",
+                        config.img_text_loss_weight,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "weighted train/Img-Text Loss",
+                        weighted_img_text_loss,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "weighted train/Text-Img Loss Weight",
+                        config.text_img_loss_weight,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "weighted train/Text-Img Loss",
+                        weighted_text_img_loss,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "weighted train/LM Loss Weight",
+                        config.lm_loss_weight,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "weighted train/LM Loss",
+                        weighted_lm_loss,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "weighted train/Loss",
+                        train_loss,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "Learning Rate",
+                        train_settings.scheduler.get_last_lr()[-1],
+                        global_step,
+                    )
+
+                    # Accuracy Metrics
+                    img_pred = torch.argmax(img_text_contrastive_prob, dim=1).cpu()
+                    label_mask = torch.arange(img_pred.size()[0]).cpu()
+                    img_accuracy = img_pred == label_mask
+                    img_accuracy = img_accuracy.float().mean()
+                    running_img_accuracy = (
+                        train_settings.train_accuracy_momentum * running_img_accuracy
+                        + (1 - train_settings.train_accuracy_momentum) * img_accuracy
+                    )
+
+                    text_pred = torch.argmax(text_img_contrastive_prob, dim=1).cpu()
+                    text_accuracy = text_pred == label_mask
+                    text_accuracy = text_accuracy.float().mean()
+                    running_text_accuracy = (
+                        train_settings.train_accuracy_momentum * running_text_accuracy
+                        + (1 - train_settings.train_accuracy_momentum) * text_accuracy
+                    )
+                    writer.add_scalar(
+                        "perf/Train Img Accuracy",
+                        running_img_accuracy,
+                        global_step,
+                    )
+                    writer.add_scalar(
+                        "perf/Train Text Accuracy",
+                        running_text_accuracy,
+                        global_step,
+                    )
+
+                if (
+                    global_step % train_settings.gradient_accum_steps
+                    == train_settings.gradient_accum_steps - 1
+                ) or (global_step == train_dataloader_len):
+                    # Action 3: optimizer.step + optimizer.zero_grad + scheduler.stop
                     # nn.utils.clip_grad_norm_(
                     #     model.parameters(), max_norm=train_settings.max_l2_grad_norm
                     # )
+                    if True:  # debug:
+                        log_gradients_in_model(
+                            model=model,
+                            parameter_names=[
+                                "img_embedding.conv.weight",
+                                "text_transformer.text_token_embedding.embeddings.weight",
+                                "text_transformer.text_token_embedding.pos_embedding.weight",
+                            ],
+                            writer=writer,
+                            global_step=global_step,
+                        )
+
                     train_settings.optimizer.step()
                     train_settings.optimizer.zero_grad()
 
-                    for _ in range(train_settings.gradient_agg_steps):
+                    for _ in range(train_settings.gradient_accum_steps):
                         train_settings.scheduler.step()
-
-                # Performance
-                img_pred = torch.argmax(img_text_contrastive_prob, dim=1).cpu()
-                label_mask = torch.arange(img_pred.size()[0]).cpu()
-                img_accuracy = img_pred == label_mask
-                img_accuracy = img_accuracy.float().mean()
-                running_img_accuracy = (
-                    train_settings.train_accuracy_momentum * running_img_accuracy
-                    + (1 - train_settings.train_accuracy_momentum) * img_accuracy
-                )
-
-                text_pred = torch.argmax(text_img_contrastive_prob, dim=1).cpu()
-                text_accuracy = text_pred == label_mask
-                text_accuracy = text_accuracy.float().mean()
-                running_text_accuracy = (
-                    train_settings.train_accuracy_momentum * running_text_accuracy
-                    + (1 - train_settings.train_accuracy_momentum) * text_accuracy
-                )
-                writer.add_scalar(
-                    "perf/Train Img Accuracy",
-                    running_img_accuracy,
-                    global_step,
-                )
-                writer.add_scalar(
-                    "perf/Train Text Accuracy",
-                    running_text_accuracy,
-                    global_step,
-                )
-
-                writer.add_scalar(
-                    "cache/Rolling Cache Enabled",
-                    config.rolling_cache_enabled,
-                    global_step,
-                )
-
-                writer.add_scalar(
-                    "cache/Rolling Cache Size",
-                    config.rolling_cache_size,
-                    global_step,
-                )
 
                 # ===============================================================================================================
                 # Error: command buffer exited with error status.
@@ -561,13 +604,16 @@ def train(
                 # retainedReferences = 1
                 # ---------------------------------------------------------------------------------------------------------------
 
+                """
+                    Evaluation 
+                """
                 if (
-                    train_step > 0
-                    and train_step % train_settings.eval_interval_steps == 0
+                    global_step > 0
+                    and global_step % train_settings.eval_interval_steps == 0
                 ):
                     assert (
                         train_settings.eval_interval_steps
-                        % train_settings.gradient_agg_steps
+                        % train_settings.gradient_accum_steps
                         == 0
                     ), ""
                     avg_vloss, _ = eval(
@@ -611,12 +657,18 @@ def create_optimizer(config: Config, train_settings: TrainSettings, model: nn.Mo
     return optimizer
 
 
-def create_scheduler(config: Config, train_settings: TrainSettings):
+def create_scheduler(config: Config, train_settings: TrainSettings, last_epoch: int):
+    # Adjust the schedul to the expected `start_global_step`
     total_steps = train_settings.epoches * len(train_settings.train_dataloader)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         train_settings.optimizer,
         T_max=total_steps,
+        last_epoch=-1,
     )
+    print(
+        f"create_scheduler2 - train_settings.lr: {train_settings.lr}, scheduler.get_last_lr: {scheduler.get_last_lr()}, optimizer lr:  {train_settings.optimizer.param_groups[0]['lr']}, initial_lr:  {train_settings.optimizer.param_groups[0]['initial_lr']}"
+    )
+
     train_settings.scheduler = scheduler
     return scheduler
 
@@ -665,8 +717,23 @@ def load_checkpoint(
     optimizer = create_optimizer(
         config=config, train_settings=train_settings, model=model_trained
     )
+
+    print(
+        f"checkpoint_optimizer_state_dict: {checkpoint['optimizer_state_dict'].keys()}"
+    )
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     assert optimizer is not None
+    logger.info(
+        f"load_state_dict: optimizer lr: {optimizer.param_groups[0]['lr']}, initial_lr: {optimizer.param_groups[0]['initial_lr']}"
+    )
+
+    # `load_state_dict` will set the `lr` to the value in the checkpoint.
+    for param_group in optimizer.param_groups:
+        print(
+            f"param_group: {param_group.keys()}, lr: {param_group['lr']}, initial_lr: {param_group['initial_lr']}"
+        )
+        param_group["lr"] = train_settings.lr
+        param_group["initial_lr"] = train_settings.lr
 
     # Load training progress
     epoch = checkpoint["epoch"]
@@ -676,6 +743,18 @@ def load_checkpoint(
         config=config,
         train_settings=train_settings,
     )
+    logger.info("Loaded from model:")
+    logger.info(f"\t-config: {config.to_json()}")
+    logger.info(f"\t-override_config: {override_config.to_json()}")
+    logger.info(f"\t-train_settings: {train_settings.to_json()}")
+    logger.info(f"\t-override_train_settings: {override_train_settings.to_json()}")
+    logger.info(f"\t-epoch: {epoch}")
+    logger.info(f"\t-global_step: {global_step}")
+
+    print(
+        f"load_checkpoint:  train_settings.optimizer lr:  {train_settings.optimizer.param_groups[0]['lr']}"
+    )
+    count_parameters(model_trained)
 
     return model_trained, optimizer, config, train_settings, epoch, global_step
 
@@ -683,16 +762,16 @@ def load_checkpoint(
 def train_model(checkpoint: str = None, debug: bool = False):
     config = Config()
 
-    if not checkpoint:
-        train_settings = TrainSettings()
+    train_settings = TrainSettings()
+    train_settings.validate()
 
+    if not checkpoint:
         init_train_device(train_settings=train_settings)
 
         init_dataloaders(
             config=config,
             train_settings=train_settings,
         )
-
         model = create_model(config=config, train_settings=train_settings)
         model = model.to(train_settings.device)
         optimizer = create_optimizer(
@@ -704,22 +783,44 @@ def train_model(checkpoint: str = None, debug: bool = False):
         start_global_step = 0
     else:
         model, optimizer, config, train_settings, start_epoch, start_global_step = (
-            load_checkpoint(model_path=checkpoint, override_config=config)
+            load_checkpoint(
+                model_path=checkpoint,
+                override_config=config,
+                override_train_settings=train_settings,
+            )
         )
         if train_settings.device != torch.device("mps"):
             model = torch.compile(model)
 
-    scheduler = create_scheduler(config=config, train_settings=train_settings)
+    scheduler = create_scheduler(
+        config=config,
+        train_settings=train_settings,
+        last_epoch=start_epoch,
+    )
     assert scheduler is not None
 
     with SummaryWriter(flush_secs=1) as writer:
+        writer.add_hparams(hparam_dict=config.to_json(), metric_dict={})
+        writer.add_hparams(hparam_dict=train_settings.to_json(), metric_dict={})
+
+        writer.add_scalar(
+            "cache/Rolling Cache Enabled",
+            config.rolling_cache_enabled,
+            0,
+        )
+        writer.add_scalar(
+            "cache/Rolling Cache Size",
+            config.rolling_cache_size,
+            0,
+        )
+
         train(
             model=model,
             config=config,
             train_settings=train_settings,
             writer=writer,
             start_epoch=start_epoch,
-            start_global_step=start_global_step,
+            # start_global_step=start_global_step,
             debug=debug,
         )
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -743,7 +844,9 @@ def train_model(checkpoint: str = None, debug: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="VLM model training.")
     parser.add_argument(
-        "--checkpoint", help="Start model training from given checkpoint", default=""
+        "--checkpoint",
+        help="Start model training from the given checkpoint",
+        default="",
     )
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()

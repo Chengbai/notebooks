@@ -41,11 +41,13 @@ def load_coco_data_items(config: Config) -> List[ImgCommentDataItem]:
     assert config is not None
 
     coco_imgs_folder = (
-        config.coco_img_comments_folder / "train2017"
+        Path(config.coco_img_comments_folder) / "train2017"
     )  # /Users/chengbai/ml/dataset/flickr30k_images/flickr30k_images
 
     captions_train_file = (
-        config.coco_img_comments_folder / "annotations_2017" / "captions_train2017.json"
+        Path(config.coco_img_comments_folder)
+        / "annotations_2017"
+        / "captions_train2017.json"
     )  # /Users/chengbai/ml/dataset/flickr30k_images/results.csv
 
     captions_train_json = load_json(captions_train_file)

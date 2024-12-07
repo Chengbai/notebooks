@@ -25,7 +25,7 @@ def enrich_fliker_data_items(
     1. enrich the image_id. Each fliker image has 5 comments
     2. enrich image_name as the full file path
     """
-    imgs_folder = config.fliker_img_comments_folder / "flickr30k_images"
+    imgs_folder = Path(config.fliker_img_comments_folder) / "flickr30k_images"
 
     data_items = sorted(data_items, key=lambda r: r.image_name)
     img_id = 0
@@ -42,7 +42,7 @@ def enrich_fliker_data_items(
 
 
 def load_fliker_data_items(config: Config) -> List[ImgCommentDataItem]:
-    img_comments_file = config.fliker_img_comments_folder / "results.csv"
+    img_comments_file = Path(config.fliker_img_comments_folder) / "results.csv"
 
     # The current `results.csv` file is using "| " to seperate 3 columns.
     # For the pd.read_csv, the `sep` here is given as a regular expression.

@@ -89,6 +89,13 @@ def create_caption_from_aug_img_tensor(
         # if len(caption_tokens_max) > 0 or cur_token_max.item() != 2:
         #     caption_tokens_max.append(cur_token_max.item())  # to python int list
 
+        # Ensure the 1st token is always <bos>
+        if len(caption_tokens) == 0 and cur_token != img_langualge_model.bos_token:
+            caption_tokens.append(img_langualge_model.bos_token)
+
+        if len(caption_tokens_max) == 0 and cur_token != img_langualge_model.bos_token:
+            caption_tokens_max.append(img_langualge_model.bos_token)
+
         caption_tokens.append(cur_token.item())  # to python int list
         caption_tokens_max.append(cur_token_max.item())  # to python int list
 

@@ -78,17 +78,23 @@ class ImgCommentDataset(Dataset):
         self.text_tokenizer = None
 
     def _get_img_cache_file(self, idx: int) -> Path:
-        folder_path = self.config.fliker_img_comments_folder / "cache" / self.split
+        folder_path = (
+            Path(self.config.fliker_img_comments_folder) / "cache" / self.split
+        )
         folder_path.mkdir(parents=True, exist_ok=True)
         return folder_path / f"img_tensor_{idx}.pt"
 
     def _get_comment_cache_file(self, idx: int) -> Path:
-        folder_path = self.config.fliker_img_comments_folder / "cache" / self.split
+        folder_path = (
+            Path(self.config.fliker_img_comments_folder) / "cache" / self.split
+        )
         folder_path.mkdir(parents=True, exist_ok=True)
         return folder_path / f"comment_tokens_{idx}.pt"
 
     def _get_comment_mask_cache_file(self, idx: int) -> Path:
-        folder_path = self.config.fliker_img_comments_folder / "cache" / self.split
+        folder_path = (
+            Path(self.config.fliker_img_comments_folder) / "cache" / self.split
+        )
         folder_path.mkdir(parents=True, exist_ok=True)
         return folder_path / f"comment_mask_{idx}.pt"
 
